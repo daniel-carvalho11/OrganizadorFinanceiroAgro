@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Extração de Dados de Nota Fiscal - UniRV</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        pre code {
+            font-family: 'Courier New', Courier, monospace;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen text-gray-800 antialiased">
+    <div class="max-w-5xl mx-auto px-4 py-8">
+        
+        <!-- Cabeçalho Principal -->
+        <div class="mb-8 text-center sm:text-left border-b pb-4">
+            <h1 class="text-2xl sm:text-3xl font-bold text-gray-900 flex items-center justify-center sm:justify-start gap-2">
+                <i class="fa-solid fa-file-invoice text-blue-600"></i> Extração de Dados de Nota Fiscal
+            </h1>
+            <p class="text-gray-600 mt-1">Carregue um PDF de nota fiscal e extraia os dados automaticamente usando IA</p>
+        </div>
+
+        <!-- Seção de Upload -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+            <h2 class="text-lg font-semibold text-gray-900 mb-1">Upload do PDF</h2>
+            <p class="text-sm text-gray-500 mb-4">Selecione o arquivo PDF da nota fiscal</p>
+
+            <form id="uploadForm" class="space-y-4">
+                <div class="flex flex-col sm:flex-row items-center gap-4">
+                    <input type="file" id="pdfFileInput" accept="application/pdf" class="block w-full text-sm text-gray-500
+                        file:mr-4 file:py-2.5 file:px-4
+                        file:rounded-lg file:border-0
+                        file:text-sm file:font-semibold
+                        file:bg-blue-50 file:text-blue-700
+                        hover:file:bg-blue-100 cursor-pointer border border-gray-300 rounded-lg p-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                    
+                    <button type="submit" id="btnExtract" class="w-full sm:w-auto px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow transition duration-150 ease-in-out flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-bolt"></i> <span>EXTRAIR DADOS</span>
+                    </button>
+                </div>
+            </form>
+
+            <!-- Card com Info do Arquivo Selecionado -->
+            <div id="fileInfoBox" class="mt-4 hidden p-3 bg-blue-50 border border-blue-100 rounded-lg flex items-center justify-between text-sm text-blue-800">
+                <div class="flex items-center gap-2 truncate">
+                    <i class="fa-regular fa-file-pdf text-red-600 text-lg"></i>
+                    <span id="fileNameDisplay" class="font-medium truncate">arquivo.pdf</span>
+                    <span id="fileSizeDisplay" class="text-xs text-gray-500">(0.00 MB)</span>
+                </div>
+                <span class="text-xs font-semibold bg-blue-200 text-blue-800 px-2 py-0.5 rounded">Pronto</span>
+            </div>
+        </div>
+
+        <!-- Indicador de Carregamento -->
+        <div id="loadingIndicator" class="hidden text-center py-12">
+            <div class="inline-block animate-spin rounded-full h-10 w-10 border-4 border-blue-600 border-t-transparent"></div>
+            <p class="mt-3 text-sm text-gray-600 font-medium">Processando Nota Fiscal com Gemini AI...</p>
+        </div>
+
+        <!-- Bloco de Resultados -->
+        <div id="resultContainer" class="hidden space-y-6">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                
+                <!-- Abas de Visualização -->
+                <div class="flex items-center justify-between border-b pb-3 mb-4">
+                    <div class="flex space-x-4">
+                        <button id="tabJsonBtn" class="text-sm font-semibold pb-1 border-b-2 border-blue-600 text-blue-600 flex items-center gap-1.5">
+                            <i class="fa-solid fa-code"></i> &lt;&gt; Dados em JSON
+                        </button>
+                        <button id="tabFormatadaBtn" class="text-sm font-semibold pb-1 border-b-2 border-transparent text-gray-500 hover:text-gray-700 flex items-center gap-1.5">
+                            <i class="fa-solid fa-table-list"></i> Visualização Formatada
+                        </button>
+                    </div>
+                    <button id="copyJsonBtn" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-md font-medium border border-gray-300 flex items-center gap-1">
+                        <i class="fa-regular fa-copy"></i> Copiar JSON
+                    </button>
+                </div>
+
+                <!-- Conteúdo 1: Visualização em JSON -->
+                <div id="jsonView" class="space-y-2">
+                    <pre class="bg-gray-900 text-green-400 p-4 rounded-lg overflow-x-auto text-xs sm:text-sm font-mono leading-relaxed"><code id="jsonOutput">{}</code></pre>
+                    <p class="text-xs text-gray-500 italic mt-2">
+                        Este JSON contém todos os dados extraídos da nota fiscal e pode ser usado para integração com outros sistemas.
+                    </p>
+                </div>
+
+                <!-- Conteúdo 2: Visualização Formatada (Cards) -->
+                <div id="formattedView" class="hidden grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Fornecedor (Emitente)</h3>
+                        <p class="text-sm font-semibold text-gray-800" id="cardFornRazao">-</p>
+                        <p class="text-xs text-gray-600" id="cardFornFantasia">-</p>
+                        <p class="text-xs text-gray-500 font-mono mt-1" id="cardFornCnpj">-</p>
+                    </div>
+
+                    <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Faturado (Destinatário)</h3>
+                        <p class="text-sm font-semibold text-gray-800" id="cardFatNome">-</p>
+                        <p class="text-xs text-gray-500 font-mono mt-1" id="cardFatCpf">-</p>
+                    </div>
+
+                    <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Dados do Documento</h3>
+                        <p class="text-sm text-gray-700"><strong>Número NF:</strong> <span id="cardNfNumero">-</span></p>
+                        <p class="text-sm text-gray-700"><strong>Emissão:</strong> <span id="cardNfEmissao">-</span></p>
+                        <p class="text-sm text-gray-700"><strong>Valor Total:</strong> <span id="cardNfTotal" class="text-green-600 font-bold">-</span></p>
+                    </div>
+
+                    <div class="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                        <h3 class="text-xs font-bold text-blue-700 uppercase tracking-wider mb-2">Classificação de Despesa</h3>
+                        <div id="cardCategorias" class="space-y-1"></div>
+                    </div>
+
+                    <div class="md:col-span-2 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Descrição dos Produtos / Serviços</h3>
+                        <ul id="cardProdutos" class="list-disc list-inside text-xs sm:text-sm text-gray-700 space-y-1"></ul>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Script de Frontend -->
+    <script>
+        const uploadForm = document.getElementById('uploadForm');
+        const pdfFileInput = document.getElementById('pdfFileInput');
+        const fileInfoBox = document.getElementById('fileInfoBox');
+        const fileNameDisplay = document.getElementById('fileNameDisplay');
+        const fileSizeDisplay = document.getElementById('fileSizeDisplay');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const resultContainer = document.getElementById('resultContainer');
+        const jsonOutput = document.getElementById('jsonOutput');
+        const copyJsonBtn = document.getElementById('copyJsonBtn');
+        const btnExtract = document.getElementById('btnExtract');
+
+        const tabJsonBtn = document.getElementById('tabJsonBtn');
+        const tabFormatadaBtn = document.getElementById('tabFormatadaBtn');
+        const jsonView = document.getElementById('jsonView');
+        const formattedView = document.getElementById('formattedView');
+
+        let rawJsonResponse = null;
+
+        // Atualiza a visualização do arquivo ao ser selecionado
+        pdfFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                fileNameDisplay.textContent = file.name;
+                fileSizeDisplay.textContent = `(${(file.size / (1024 * 1024)).toFixed(2)} MB)`;
+                fileInfoBox.classList.remove('hidden');
+            }
+        });
+
+        // Alternância de Abas
+        tabJsonBtn.addEventListener('click', () => {
+            tabJsonBtn.className = "text-sm font-semibold pb-1 border-b-2 border-blue-600 text-blue-600 flex items-center gap-1.5";
+            tabFormatadaBtn.className = "text-sm font-semibold pb-1 border-b-2 border-transparent text-gray-500 hover:text-gray-700 flex items-center gap-1.5";
+            jsonView.classList.remove('hidden');
+            formattedView.classList.add('hidden');
+        });
+
+        tabFormatadaBtn.addEventListener('click', () => {
+            tabFormatadaBtn.className = "text-sm font-semibold pb-1 border-b-2 border-blue-600 text-blue-600 flex items-center gap-1.5";
+            tabJsonBtn.className = "text-sm font-semibold pb-1 border-b-2 border-transparent text-gray-500 hover:text-gray-700 flex items-center gap-1.5";
+            formattedView.classList.remove('hidden');
+            jsonView.classList.add('hidden');
+        });
+
+        // Submissão do formulário
+        uploadForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const file = pdfFileInput.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            // UI Loading state
+            btnExtract.disabled = true;
+            btnExtract.classList.add('opacity-50', 'cursor-not-allowed');
+            loadingIndicator.classList.remove('hidden');
+            resultContainer.classList.add('hidden');
+
+            try {
+                const response = await fetch('/api/extrair-nf', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (!response.ok || result.status !== 'success') {
+                    throw new Error(result.message || 'Erro ao processar arquivo.');
+                }
+
+                rawJsonResponse = result.dados;
+                renderData(result.dados);
+                resultContainer.classList.remove('hidden');
+            } catch (err) {
+                alert(`Erro: ${err.message}`);
+            } finally {
+                loadingIndicator.classList.add('hidden');
+                btnExtract.disabled = false;
+                btnExtract.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        });
+
+        // Renderiza os dados no JSON e na visualização formatada
+        function renderData(data) {
+            jsonOutput.textContent = JSON.stringify(data, null, 2);
+
+            // Card Fornecedor
+            document.getElementById('cardFornRazao').textContent = data.fornecedor?.razaoSocial || 'N/A';
+            document.getElementById('cardFornFantasia').textContent = data.fornecedor?.nomeFantasia ? `(${data.fornecedor.nomeFantasia})` : '';
+            document.getElementById('cardFornCnpj').textContent = `CNPJ: ${data.fornecedor?.cnpj || 'N/A'}`;
+
+            // Card Faturado
+            document.getElementById('cardFatNome').textContent = data.faturado?.nomeCompleto || 'N/A';
+            document.getElementById('cardFatCpf').textContent = `CPF/CNPJ: ${data.faturado?.cpf || 'N/A'}`;
+
+            // Card NF
+            document.getElementById('cardNfNumero').textContent = data.numeroNotaFiscal || 'N/A';
+            document.getElementById('cardNfEmissao').textContent = data.dataEmissao || 'N/A';
+            document.getElementById('cardNfTotal').textContent = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(data.valorTotal || 0);
+
+            // Categorias
+            const cardCategorias = document.getElementById('cardCategorias');
+            cardCategorias.innerHTML = '';
+            if (data.classificacaoDespesa && data.classificacaoDespesa.length > 0) {
+                data.classificacaoDespesa.forEach(cat => {
+                    const el = document.createElement('div');
+                    el.className = 'bg-blue-100 text-blue-800 text-xs font-semibold px-2 py-1 rounded inline-block mr-1 mb-1';
+                    el.textContent = cat.categoria;
+                    cardCategorias.appendChild(el);
+                });
+            } else {
+                cardCategorias.textContent = 'Não identificada';
+            }
+
+            // Produtos
+            const cardProdutos = document.getElementById('cardProdutos');
+            cardProdutos.innerHTML = '';
+            if (data.descricaoProdutos && data.descricaoProdutos.length > 0) {
+                data.descricaoProdutos.forEach(prod => {
+                    const li = document.createElement('li');
+                    li.textContent = prod;
+                    cardProdutos.appendChild(li);
+                });
+            } else {
+                cardProdutos.innerHTML = '<li class="text-gray-400">Nenhum item listado</li>';
+            }
+        }
+
+        // Copiar JSON para Área de Transferência
+        copyJsonBtn.addEventListener('click', () => {
+            if (!rawJsonResponse) return;
+            navigator.clipboard.writeText(JSON.stringify(rawJsonResponse, null, 2)).then(() => {
+                const originalText = copyJsonBtn.innerHTML;
+                copyJsonBtn.innerHTML = '<i class="fa-solid fa-check text-green-600"></i> Copiado!';
+                setTimeout(() => {
+                    copyJsonBtn.innerHTML = originalText;
+                }, 2000);
+            });
+        });
+    </script>
+</body>
+</html>
