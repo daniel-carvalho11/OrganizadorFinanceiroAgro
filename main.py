@@ -94,7 +94,7 @@ Instruções Adicionais:
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request, "index.html")
 
 @app.post("/api/extrair-nf")
 async def extrair_nota_fiscal(file: UploadFile = File(...)):
@@ -107,9 +107,9 @@ async def extrair_nota_fiscal(file: UploadFile = File(...)):
     try:
         pdf_bytes = await file.read()
 
-        # Chamada ao modelo Gemini 2.5 Flash usando suporte nativo a PDF (inline bytes)
+        # Chamada ao modelo Gemini 1.5 Flash usando suporte nativo a PDF (inline bytes)
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-1.5-flash",
             contents=[
                 types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
                 "Analise este documento PDF de Nota Fiscal, extraia todos os campos obrigatórios e classifique a despesa conforme as regras."
