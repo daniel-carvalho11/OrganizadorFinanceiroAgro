@@ -107,6 +107,8 @@
                         <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Dados do Documento</h3>
                         <p class="text-sm text-gray-700"><strong>Número NF:</strong> <span id="cardNfNumero">-</span></p>
                         <p class="text-sm text-gray-700"><strong>Emissão:</strong> <span id="cardNfEmissao">-</span></p>
+                        <p class="text-sm text-gray-700"><strong>Vencimento:</strong> <span id="cardNfVencimento">-</span></p>
+                        <p class="text-sm text-gray-700"><strong>Parcelas:</strong> <span id="cardNfParcelas">-</span></p>
                         <p class="text-sm text-gray-700"><strong>Valor Total:</strong> <span id="cardNfTotal" class="text-green-600 font-bold">-</span></p>
                     </div>
 
@@ -216,7 +218,8 @@
 
             // Card Fornecedor
             document.getElementById('cardFornRazao').textContent = data.fornecedor?.razaoSocial || 'N/A';
-            document.getElementById('cardFornFantasia').textContent = data.fornecedor?.nomeFantasia ? `(${data.fornecedor.nomeFantasia})` : '';
+            const fantasia = data.fornecedor?.fantasia || data.fornecedor?.nomeFantasia;
+            document.getElementById('cardFornFantasia').textContent = fantasia ? `(${fantasia})` : '';
             document.getElementById('cardFornCnpj').textContent = `CNPJ: ${data.fornecedor?.cnpj || 'N/A'}`;
 
             // Card Faturado
@@ -226,6 +229,8 @@
             // Card NF
             document.getElementById('cardNfNumero').textContent = data.numeroNotaFiscal || 'N/A';
             document.getElementById('cardNfEmissao').textContent = data.dataEmissao || 'N/A';
+            document.getElementById('cardNfVencimento').textContent = data.dataVencimento || (data.parcelas && data.parcelas[0]?.dataVencimento) || 'N/A';
+            document.getElementById('cardNfParcelas').textContent = `${data.quantidadeParcelas || (data.parcelas?.length || 1)}x`;
             document.getElementById('cardNfTotal').textContent = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(data.valorTotal || 0);
 
             // Categorias
@@ -234,8 +239,8 @@
             if (data.classificacaoDespesa && data.classificacaoDespesa.length > 0) {
                 data.classificacaoDespesa.forEach(cat => {
                     const el = document.createElement('div');
-                    el.className = 'bg-blue-100 text-blue-800 text-xs font-semibold px-2 py-1 rounded inline-block mr-1 mb-1';
-                    el.textContent = cat.categoria;
+                    el.className = 'bg-blue-100 text-blue-800 text-xs font-semibold px-2 py-1 rounded mb-1';
+                    el.innerHTML = `<span>${cat.categoria}</span>` + (cat.justificativa ? `<p class="text-[11px] font-normal text-blue-700 mt-0.5">${cat.justificativa}</p>` : '');
                     cardCategorias.appendChild(el);
                 });
             } else {
