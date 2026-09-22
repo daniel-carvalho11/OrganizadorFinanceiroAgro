@@ -163,6 +163,9 @@ class Agent1:
                         response_mime_type="application/json",
                         response_schema=NotaFiscalExtraida,
                         temperature=0.1,
+                        thinking_config=types.ThinkingConfig(
+                        thinking_budget=0  # 0 = desativa o raciocínio interno → resposta muito mais rápida
+                        ),
                         # Desativa o AFC para suprimir o aviso informativo de terminal
                         automatic_function_calling=types.AutomaticFunctionCallingConfig(
                             disable=True

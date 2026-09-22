@@ -1,4 +1,5 @@
 import os
+import asyncio
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -29,7 +30,7 @@ async def extrair_nota_fiscal(file: UploadFile = File(...)):
         pdf_bytes = await file.read()
         
         # Execução do agente de extração (Slide 16)
-        dados_json = agent1.extrair_dados(pdf_bytes)
+        dados_json = await asyncio.to_thread(agent1.extrair_dados, pdf_bytes)
         
         return JSONResponse(content={"status": "success", "dados": dados_json})
 
