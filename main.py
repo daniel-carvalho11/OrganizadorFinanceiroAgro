@@ -1,57 +1,71 @@
-import os
-import asyncio
-from typing import Optional
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
-from starlette.requests import Request
+from flask import Flask, request, jsonify, render_template
 
 # Importação do Agent1 conforme estrutura especificada na aula (Slide 16)
 from agents.agent1.manipulacao_dados import Agent1
 
 load_dotenv()
 
-app = FastAPI(title="Processador de NF - N2 Etapa 1")
-templates = Jinja2Templates(directory="templates")
+# Convenções nativas do Flask:
+#   - pasta "templates/" → HTMLs (index.html funciona como está)
+#   - pasta "static/"    → JS/CSS (servida automaticamente em /static/)
+app = Flask(__name__)
 
-@app.get("/", response_class=HTMLResponse)
-async def index(request: Request):
-    return templates.TemplateResponse(request, "index.html")
+@app.route("/")
+def index():
+    """Serve a interface web (Figura 1 do documento do professor)."""
+    return render_template("index.html")
 
-@app.post("/api/extrair-nf")
-async def extrair_nota_fiscal(
-    file: UploadFile = File(...), 
-    api_key: Optional[str] = Form(None)
-):
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="O arquivo enviado deve ser um documento PDF.")
+@app.route("/api/extrair-nf", methods=["POST"])
+def extrair_nota_fiscal():
+    """
+    Recebe o PDF da Nota Fiscal e a chave da API do Gemini (via interface),
+    chama o Agent1 e devolve os dados extraídos em JSON (Figura 2 do documento).
+    """
+    # Validação 1: o arquivo veio no formulário?
+    if "file" not in request.files:
+        return jsonify({
+            "status": "error",
+            "message": "Nenhum arquivo enviado."
+        }), 400
 
+    file = request.files["file"]
+    # Chave da API fornecida via interface (campo do formulário)
+    api_key = (request.form.get("api_key") or "").strip()
+
+    # Validação 2: é um PDF?
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        return jsonify({
+            "status": "error",
+            "message": "O arquivo enviado deve ser um documento PDF."
+        }), 400
+
+    # Validação 3: a chave da API foi informada?
     if not api_key:
-        raise HTTPException(status_code=400, detail="A chave da API do Gemini é obrigatória.")
+        return jsonify({
+            "status": "error",
+            "message": "A chave da API do Gemini é obrigatória."
+        }), 400
 
     try:
-        pdf_bytes = await file.read()
-        
+        pdf_bytes = file.read()
+
         # Instancia o Agent1 passando a chave da API fornecida via interface
         agent1 = Agent1(api_key=api_key)
-        
+
         # Execução do agente de extração (Slide 16)
-        dados_json = await asyncio.to_thread(agent1.extrair_dados, pdf_bytes)
-        
-        return JSONResponse(content={"status": "success", "dados": dados_json})
+        # Nota: o Flask é síncrono — não precisa de asyncio.to_thread
+        dados_json = agent1.extrair_dados(pdf_bytes)
+
+        return jsonify({"status": "success", "dados": dados_json})
 
     except ValueError as ve:
-        return JSONResponse(
-            status_code=500,
-            content={"status": "error", "message": str(ve)}
-        )
+        return jsonify({"status": "error", "message": str(ve)}), 500
     except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"status": "error", "message": f"Falha ao processar Nota Fiscal: {str(e)}"}
-        )
+        return jsonify({
+            "status": "error",
+            "message": f"Falha ao processar Nota Fiscal: {str(e)}"
+        }), 500
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    app.run(host="0.0.0.0", port=8000, debug=True)
