@@ -26,10 +26,21 @@
 
         <!-- Seção de Upload -->
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-            <h2 class="text-lg font-semibold text-gray-900 mb-1">Upload do PDF</h2>
-            <p class="text-sm text-gray-500 mb-4">Selecione o arquivo PDF da nota fiscal</p>
+            <h2 class="text-lg font-semibold text-gray-900 mb-1">Upload do PDF e Configuração</h2>
+            <p class="text-sm text-gray-500 mb-4">Insira sua chave da API do Gemini e selecione o arquivo PDF da nota fiscal para habilitar a extração</p>
 
             <form id="uploadForm" class="space-y-4">
+                <!-- Campo de Chave da API -->
+                <div>
+                    <label for="apiKeyInput" class="block text-sm font-medium text-gray-700 mb-1">Chave da API do Gemini (Obrigatório preencher)</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                            <i class="fa-solid fa-key"></i>
+                        </span>
+                        <input type="password" id="apiKeyInput" placeholder="Cole sua GEMINI_API_KEY aqui..." class="block w-full pl-10 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                </div>
+
                 <div class="flex flex-col sm:flex-row items-center gap-4">
                     <input type="file" id="pdfFileInput" accept="application/pdf" class="block w-full text-sm text-gray-500
                         file:mr-4 file:py-2.5 file:px-4
@@ -38,7 +49,7 @@
                         file:bg-blue-50 file:text-blue-700
                         hover:file:bg-blue-100 cursor-pointer border border-gray-300 rounded-lg p-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500" required>
                     
-                    <button type="submit" id="btnExtract" class="w-full sm:w-auto px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow transition duration-150 ease-in-out flex items-center justify-center gap-2">
+                    <button type="submit" id="btnExtract" class="w-full sm:w-auto px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow transition duration-150 ease-in-out flex items-center justify-center gap-2 whitespace-nowrap opacity-50 cursor-not-allowed" disabled>
                         <i class="fa-solid fa-bolt"></i> <span>EXTRAIR DADOS</span>
                     </button>
                 </div>
@@ -132,6 +143,7 @@
     <script>
         const uploadForm = document.getElementById('uploadForm');
         const pdfFileInput = document.getElementById('pdfFileInput');
+        const apiKeyInput = document.getElementById('apiKeyInput');
         const fileInfoBox = document.getElementById('fileInfoBox');
         const fileNameDisplay = document.getElementById('fileNameDisplay');
         const fileSizeDisplay = document.getElementById('fileSizeDisplay');
@@ -148,7 +160,24 @@
 
         let rawJsonResponse = null;
 
-        // Atualiza a visualização do arquivo ao ser selecionado
+        // Função para validar se o botão deve ser ativado
+        function validateForm() {
+            const hasKey = apiKeyInput.value.trim().length > 0;
+            const hasFile = pdfFileInput.files.length > 0;
+
+            if (hasKey && hasFile) {
+                btnExtract.disabled = false;
+                btnExtract.classList.remove('opacity-50', 'cursor-not-allowed');
+            } else {
+                btnExtract.disabled = true;
+                btnExtract.classList.add('opacity-50', 'cursor-not-allowed');
+            }
+        }
+
+        // Ouve alterações no campo de texto da API Key
+        apiKeyInput.addEventListener('input', validateForm);
+
+        // Atualiza a visualização do arquivo ao ser selecionado e valida o form
         pdfFileInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (file) {
@@ -156,6 +185,7 @@
                 fileSizeDisplay.textContent = `(${(file.size / (1024 * 1024)).toFixed(2)} MB)`;
                 fileInfoBox.classList.remove('hidden');
             }
+            validateForm();
         });
 
         // Alternância de Abas
@@ -181,6 +211,12 @@
 
             const formData = new FormData();
             formData.append('file', file);
+            
+            // Adiciona a API key informada no input
+            const customApiKey = apiKeyInput.value.trim();
+            if (customApiKey) {
+                formData.append('api_key', customApiKey);
+            }
 
             // UI Loading state
             btnExtract.disabled = true;
@@ -207,8 +243,7 @@
                 alert(`Erro: ${err.message}`);
             } finally {
                 loadingIndicator.classList.add('hidden');
-                btnExtract.disabled = false;
-                btnExtract.classList.remove('opacity-50', 'cursor-not-allowed');
+                validateForm(); // Revalida o estado do botão
             }
         });
 

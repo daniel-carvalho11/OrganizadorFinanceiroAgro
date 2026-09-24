@@ -1,7 +1,8 @@
 import os
 import asyncio
+from typing import Optional
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
@@ -14,20 +15,26 @@ load_dotenv()
 app = FastAPI(title="Processador de NF - N2 Etapa 1")
 templates = Jinja2Templates(directory="templates")
 
-# Instância do Agent1
-agent1 = Agent1()
-
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     return templates.TemplateResponse(request, "index.html")
 
 @app.post("/api/extrair-nf")
-async def extrair_nota_fiscal(file: UploadFile = File(...)):
+async def extrair_nota_fiscal(
+    file: UploadFile = File(...), 
+    api_key: Optional[str] = Form(None)
+):
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="O arquivo enviado deve ser um documento PDF.")
 
+    if not api_key:
+        raise HTTPException(status_code=400, detail="A chave da API do Gemini é obrigatória.")
+
     try:
         pdf_bytes = await file.read()
+        
+        # Instancia o Agent1 passando a chave da API fornecida via interface
+        agent1 = Agent1(api_key=api_key)
         
         # Execução do agente de extração (Slide 16)
         dados_json = await asyncio.to_thread(agent1.extrair_dados, pdf_bytes)
