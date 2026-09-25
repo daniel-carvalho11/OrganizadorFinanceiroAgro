@@ -10,7 +10,7 @@ from google.genai import types
 load_dotenv()
 
 # =====================================================================
-# Modelos de Dados (Schemas para Contas a Pagar - Conforme Slides e Regras)
+# Modelos de Dados (Schemas para Contas a Pagar
 # =====================================================================
 
 class Fornecedor(BaseModel):
@@ -113,7 +113,7 @@ REGRAS DE CLASSIFICAÇÃO DA DESPESA (ATENÇÃO: A despesa NÃO é um campo extr
 """
 
 # =====================================================================
-# Classe do Agente 1 (conforme Slides 14, 15 e 16 da aula)
+# Classe do Agente 1 
 # =====================================================================
 
 class Agent1:
@@ -131,7 +131,7 @@ class Agent1:
         """
         Extrai os dados da Nota Fiscal e retorna o dicionário estruturado.
         
-        Aceita tanto o caminho do arquivo (str / Path) conforme exemplo do Slide 16,
+        Aceita tanto o caminho do arquivo (str / Path),
         quanto os bytes diretamente (para uso em APIs web).
         """
         if not self.client:

@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify, render_template
 
-# Importação do Agent1 conforme estrutura especificada na aula (Slide 16)
+# Importação do Agent1 conforme estrutura especificada na aula
 from agents.agent1.manipulacao_dados import Agent1
 
 load_dotenv()
@@ -10,6 +10,9 @@ load_dotenv()
 #   - pasta "templates/" → HTMLs (index.html funciona como está)
 #   - pasta "static/"    → JS/CSS (servida automaticamente em /static/)
 app = Flask(__name__)
+app = Flask(__name__)
+
+app.json.sort_keys = False
 
 @app.route("/")
 def index():
@@ -53,7 +56,7 @@ def extrair_nota_fiscal():
         # Instancia o Agent1 passando a chave da API fornecida via interface
         agent1 = Agent1(api_key=api_key)
 
-        # Execução do agente de extração (Slide 16)
+        # Execução do agente de extração 
         # Nota: o Flask é síncrono — não precisa de asyncio.to_thread
         dados_json = agent1.extrair_dados(pdf_bytes)
 
