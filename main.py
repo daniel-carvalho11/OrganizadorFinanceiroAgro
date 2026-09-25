@@ -1,8 +1,33 @@
+import os
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify, render_template
-
+import subprocess
+from datetime import datetime
 # Importação do Agent1 conforme estrutura especificada na aula
 from agents.agent1.manipulacao_dados import Agent1
+
+
+def get_deploy_info():
+    """Recupera automaticamente o commit e data de build."""
+    # 1. No Render, o commit vem injetado automaticamente nesta variável:
+    commit_hash = os.environ.get("RENDER_GIT_COMMIT")
+    
+    # 2. Se estiver rodando localmente no seu computador:
+    if not commit_hash:
+        try:
+            commit_hash = subprocess.check_output(
+                ["git", "rev-parse", "--short", "HEAD"],
+                stderr=subprocess.DEVNULL
+            ).decode("utf-8").strip()
+        except Exception:
+            commit_hash = "dev-local"
+    else:
+        commit_hash = commit_hash[:7]  # Apenas os 7 primeiros caracteres
+
+    return {
+        "commit": commit_hash,
+        "env": "Produção (Render)" if os.environ.get("RENDER") else "Desenvolvimento Local"
+    }
 
 load_dotenv()
 
@@ -10,14 +35,17 @@ load_dotenv()
 #   - pasta "templates/" → HTMLs (index.html funciona como está)
 #   - pasta "static/"    → JS/CSS (servida automaticamente em /static/)
 app = Flask(__name__)
-app = Flask(__name__)
+
+# Pode ler a variável sem problemas, ela apenas ficará como None por enquanto
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
 app.json.sort_keys = False
 
 @app.route("/")
 def index():
-    """Serve a interface web (Figura 1 do documento do professor)."""
-    return render_template("index.html")
+    info = get_deploy_info()
+    """Serve a interface web."""
+    return render_template("index.html", deploy_info=info)
 
 @app.route("/api/extrair-nf", methods=["POST"])
 def extrair_nota_fiscal():
