@@ -1,4 +1,5 @@
-from datetime import datetime
+import calendar
+from datetime import datetime, date, timedelta
 from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
 from models import Pessoa, MovimentoContas, Parcela, Classificacao, MovimentoHasClassificacao
@@ -15,6 +16,51 @@ def parse_data(data_str: Optional[str]):
         except ValueError:
             continue
     return None
+
+def ajustar_dia_util(dt: Optional[date]) -> Optional[date]:
+    """Ajusta a data para o próximo dia útil se cair em final de semana ou feriado nacional fixo."""
+    if not dt:
+        return None
+    if isinstance(dt, datetime):
+        dt = dt.date()
+        
+    feriados_fixos = {
+        (1, 1),   # Ano Novo
+        (4, 21),  # Tiradentes
+        (5, 1),   # Dia do Trabalho
+        (9, 7),   # Independência
+        (10, 12), # Nossa Senhora Aparecida
+        (11, 2),  # Finados
+        (11, 15), # Proclamação da República
+        (11, 20), # Consciência Negra
+        (12, 25), # Natal
+    }
+    while dt.weekday() in (5, 6) or (dt.month, dt.day) in feriados_fixos:
+        dt += timedelta(days=1)
+    return dt
+
+def calcular_vencimento_parcela(data_base: Optional[date], indice_parcela: int = 1) -> date:
+    """
+    Calcula a data de vencimento para a parcela (indice_parcela 1, 2, 3...).
+    - Mantém o mesmo dia do mês da data base.
+    - Avança (indice_parcela - 1) meses.
+    - Se o dia exceder os dias do mês alvo (ex: 31 de fev), usa o último dia do mês.
+    - Ajusta a data para o próximo dia útil se for final de semana ou feriado.
+    """
+    if not data_base:
+        data_base = date.today()
+    if isinstance(data_base, datetime):
+        data_base = data_base.date()
+        
+    meses_a_adicionar = max(0, indice_parcela - 1)
+    ano = data_base.year + (data_base.month - 1 + meses_a_adicionar) // 12
+    mes = (data_base.month - 1 + meses_a_adicionar) % 12 + 1
+    
+    ultimo_dia_mes = calendar.monthrange(ano, mes)[1]
+    dia = min(data_base.day, ultimo_dia_mes)
+    
+    dt_alvo = date(ano, mes, dia)
+    return ajustar_dia_util(dt_alvo)
 
 def salvar_nota_fiscal(dados_json: Dict[str, Any], session: Optional[Session] = None) -> MovimentoContas:
     """
@@ -92,9 +138,11 @@ def salvar_nota_fiscal(dados_json: Dict[str, Any], session: Optional[Session] = 
 
         # 5. Processa as Parcelas
         parcelas_lista = dados_json.get("parcelas", [])
+        data_base_venc = parse_data(dados_json.get("dataVencimento")) or data_emissao or date.today()
+
         if not parcelas_lista:
             # Cria parcela única se a lista estiver vazia
-            data_venc = parse_data(dados_json.get("dataVencimento"))
+            data_venc = calcular_vencimento_parcela(data_base_venc, 1)
             val = float(dados_json.get("valorTotal") or 0.0)
             p = Parcela(
                 id_movimento_contas=movimento.id_movimento_contas,
@@ -107,9 +155,16 @@ def salvar_nota_fiscal(dados_json: Dict[str, Any], session: Optional[Session] = 
             )
             db.add(p)
         else:
-            for item_p in parcelas_lista:
-                num_p = item_p.get("numeroParcela", 1)
-                data_venc = parse_data(item_p.get("dataVencimento"))
+            for idx, item_p in enumerate(parcelas_lista, start=1):
+                num_p = item_p.get("numeroParcela", idx)
+                data_venc_raw = parse_data(item_p.get("dataVencimento"))
+                if data_venc_raw:
+                    # Data explícita da fatura: ajusta para dia útil se cair em fds ou feriado
+                    data_venc = ajustar_dia_util(data_venc_raw)
+                else:
+                    # Calcula mensalmente no mesmo dia + dia útil
+                    data_venc = calcular_vencimento_parcela(data_base_venc, idx)
+
                 val_p = float(item_p.get("valorParcela") or 0.0)
                 p = Parcela(
                     id_movimento_contas=movimento.id_movimento_contas,

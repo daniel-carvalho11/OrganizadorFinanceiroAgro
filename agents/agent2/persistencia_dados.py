@@ -5,7 +5,7 @@ from sqlalchemy import or_, cast, String
 from sqlalchemy.orm import Session
 from database import SessionLocal
 from models import Pessoa, MovimentoContas, Parcela, Classificacao, MovimentoHasClassificacao
-from servico_persistencia import salvar_nota_fiscal, parse_data
+from servico_persistencia import salvar_nota_fiscal, parse_data, calcular_vencimento_parcela, ajustar_dia_util
 
 class Agent2:
     """
@@ -232,16 +232,17 @@ class Agent2:
             session.add(movimento)
             session.flush()
 
-            # Gera parcelas com identificação única (Regra: PARCELACONTAS Identificacao Única)
+            # Gera parcelas com identificação única e vencimento mensal em dia útil
             qtd_parcelas = int(dados.get("quantidade_parcelas") or 1)
             val_parcela = round(valor_total / max(qtd_parcelas, 1), 2)
-            data_base_venc = parse_data(dados.get("data_vencimento")) or datetime.now().date()
+            data_base_venc = parse_data(dados.get("data_vencimento")) or parse_data(dados.get("data_emissao")) or datetime.now().date()
 
             for i in range(1, qtd_parcelas + 1):
+                dt_venc = calcular_vencimento_parcela(data_base_venc, i)
                 p = Parcela(
                     id_movimento_contas=movimento.id_movimento_contas,
                     identificacao=f"PARCELA_{movimento.id_movimento_contas}_{i}_{qtd_parcelas}",
-                    data_vencimento=data_base_venc,
+                    data_vencimento=dt_venc,
                     valor_parcela=val_parcela,
                     valor_pago=0.0,
                     valor_saldo=val_parcela,
