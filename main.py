@@ -49,9 +49,9 @@ def index():
 @app.route("/api/extrair-nf", methods=["POST"])
 def extrair_nota_fiscal():
     """
-    Fluxo Agent-to-Agent (A2A):
     1. Agent 1: Extrai os dados do PDF de Nota Fiscal.
-    2. Agent 2: Consulta se Fornecedor e Faturado já existem no banco e persiste o lançamento.
+    2. Agent 2: Consulta se Fornecedor, Faturado e Despesa já existem no banco (sem gravar).
+    Retorna os dados para conferência e confirmação do usuário na interface.
     """
     if "file" not in request.files:
         return jsonify({"status": "error", "message": "Nenhum arquivo enviado."}), 400
@@ -72,19 +72,45 @@ def extrair_nota_fiscal():
         agent1 = Agent1(api_key=api_key)
         dados_json = agent1.extrair_dados(pdf_bytes)
 
-        # Execução do Agent2 (Verificação de Pessoas e Persistência no Banco)
-        resultado_persistencia = agent2.salvar_nota_fiscal(dados_json)
+        # Execução do Agent2 (Consulta de existência no Banco sem gravar)
+        resultado_consulta = agent2.consultar_dados_nota_fiscal(dados_json)
 
         return jsonify({
             "status": "success",
             "dados": dados_json,
-            "persistencia": resultado_persistencia
+            "consulta": resultado_consulta
         })
 
     except ValueError as ve:
         return jsonify({"status": "error", "message": str(ve)}), 500
     except Exception as e:
         return jsonify({"status": "error", "message": f"Falha ao processar Nota Fiscal: {str(e)}"}), 500
+
+@app.route("/api/confirmar-lancamento", methods=["POST"])
+def confirmar_lancamento():
+    """
+    Confirma e grava a Nota Fiscal no banco de dados relacional (Agent 2):
+    1. Criar fornecedor (se não existir)
+    2. Criar faturado (se não existir)
+    3. Criar despesa (se não existir)
+    4. Criar movimento e parcelas
+    5. Retorna sucesso do lançamento.
+    """
+    req_data = request.get_json() or {}
+    dados_json = req_data.get("dados")
+
+    if not dados_json:
+        return jsonify({"status": "error", "message": "Dados da nota fiscal não informados para gravação."}), 400
+
+    try:
+        resultado_persistencia = agent2.salvar_nota_fiscal(dados_json)
+        code = 200 if resultado_persistencia.get("status") == "success" else 400
+        return jsonify({
+            "status": "success",
+            "persistencia": resultado_persistencia
+        }), code
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Falha ao persistir lançamento: {str(e)}"}), 500
 
 @app.route("/api/movimentos", methods=["GET"])
 def listar_movimentos():
@@ -105,6 +131,14 @@ def listar_movimentos():
         data_fim=data_fim
     )
     return jsonify({"status": "success", "total": len(movimentos), "dados": movimentos})
+
+@app.route("/api/movimentos/<int:id_movimento>", methods=["GET"])
+def obter_movimento(id_movimento: int):
+    """Retorna os dados detalhados de um movimento específico, incluindo parcelas e classificação."""
+    movimento = agent2.obter_movimento(id_movimento)
+    if not movimento:
+        return jsonify({"status": "error", "message": f"Movimento #{id_movimento} não encontrado."}), 404
+    return jsonify({"status": "success", "dados": movimento})
 
 @app.route("/api/movimentos", methods=["POST"])
 def criar_movimento():

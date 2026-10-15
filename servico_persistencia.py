@@ -85,7 +85,7 @@ def salvar_nota_fiscal(dados_json: Dict[str, Any], session: Optional[Session] = 
         
         if not emitente:
             emitente = Pessoa(
-                tipo="Jurídica",
+                tipo="CLIENTE-FORNECEDOR",
                 razao_social=razao_fornecedor,
                 nome_fantasia=fantasia_fornecedor,
                 documento=doc_fornecedor,
@@ -106,9 +106,8 @@ def salvar_nota_fiscal(dados_json: Dict[str, Any], session: Optional[Session] = 
             destinatario = db.query(Pessoa).filter_by(razao_social=nome_faturado).first()
 
         if not destinatario:
-            tipo_doc = "Física" if len(doc_faturado) <= 14 else "Jurídica"
             destinatario = Pessoa(
-                tipo=tipo_doc,
+                tipo="FATURADO",
                 razao_social=nome_faturado,
                 nome_fantasia=None,
                 documento=doc_faturado,

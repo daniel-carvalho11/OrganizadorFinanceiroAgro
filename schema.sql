@@ -7,7 +7,7 @@
 -- 1. TABELA: pessoas (Centraliza Fornecedores/Emitentes e Clientes/Destinatários)
 CREATE TABLE IF NOT EXISTS pessoas (
     id_pessoa SERIAL PRIMARY KEY,
-    tipo VARCHAR(20) NOT NULL CHECK (tipo IN ('Física', 'Jurídica')),
+    tipo VARCHAR(30) NOT NULL CHECK (tipo IN ('CLIENTE-FORNECEDOR', 'FATURADO', 'FORNECEDOR', 'CLIENTE', 'Física', 'Jurídica')),
     razao_social VARCHAR(255) NOT NULL,
     nome_fantasia VARCHAR(255),
     documento VARCHAR(20),

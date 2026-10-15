@@ -8,7 +8,7 @@ class Pessoa(Base):
     __tablename__ = "pessoas"
 
     id_pessoa = Column(Integer, primary_key=True, autoincrement=True)
-    tipo = Column(String(20), nullable=False, default="Jurídica")  # 'Física' ou 'Jurídica'
+    tipo = Column(String(30), nullable=False, default="CLIENTE-FORNECEDOR")  # 'CLIENTE-FORNECEDOR', 'FATURADO', 'FORNECEDOR', 'CLIENTE', 'Física' ou 'Jurídica'
     razao_social = Column(String(255), nullable=False)
     nome_fantasia = Column(String(255), nullable=True)
     documento = Column(String(20), nullable=True)  # CPF ou CNPJ

@@ -32,11 +32,12 @@ class Agent2:
         documento: Optional[str] = None,
         nome_fantasia: Optional[str] = None,
         tipo: str = "CLIENTE-FORNECEDOR",
-        session: Optional[Session] = None
+        session: Optional[Session] = None,
+        criar_se_nao_existir: bool = True
     ) -> Dict[str, Any]:
         """
         Consulta se a Pessoa (Fornecedor ou Faturado) já existe no Banco de Dados.
-        Retorna os dados da consulta (EXISTE - ID ou NÃO EXISTE) e a entidade Pessoa.
+        Retorna os dados da consulta (EXISTE – ID: X ou NÃO EXISTE) e a entidade Pessoa (ou None se não criar).
         """
         s = session or self._get_session()
         should_close = session is None and self.db_session is None
@@ -57,19 +58,17 @@ class Agent2:
             else:
                 status_banco = "NÃO EXISTE"
                 ja_existia = False
-                tipo_pessoa = tipo
-                if doc_limpo and len(doc_limpo) <= 14:
-                    tipo_pessoa = "FATURADO"
-                
-                pessoa = Pessoa(
-                    tipo=tipo_pessoa,
-                    razao_social=razao_limpa,
-                    nome_fantasia=nome_fantasia,
-                    documento=doc_limpo,
-                    status="ativo"
-                )
-                s.add(pessoa)
-                s.flush()
+                if criar_se_nao_existir:
+                    tipo_pessoa = tipo or ("FATURADO" if doc_limpo and len(doc_limpo) <= 14 else "CLIENTE-FORNECEDOR")
+                    pessoa = Pessoa(
+                        tipo=tipo_pessoa,
+                        razao_social=razao_limpa,
+                        nome_fantasia=nome_fantasia,
+                        documento=doc_limpo,
+                        status="ativo"
+                    )
+                    s.add(pessoa)
+                    s.flush()
 
             return {
                 "pessoa": pessoa,
@@ -86,7 +85,8 @@ class Agent2:
         self,
         descricao_cat: str,
         tipo: str = "DESPESA",
-        session: Optional[Session] = None
+        session: Optional[Session] = None,
+        criar_se_nao_existir: bool = True
     ) -> Dict[str, Any]:
         """
         Consulta se a classificação da Despesa/Receita já existe no Banco de Dados.
@@ -104,9 +104,10 @@ class Agent2:
             else:
                 status_banco = "NÃO EXISTE"
                 ja_existia = False
-                cat = Classificacao(tipo=tipo, descricao=nome_cat, status="ativo")
-                s.add(cat)
-                s.flush()
+                if criar_se_nao_existir:
+                    cat = Classificacao(tipo=tipo, descricao=nome_cat, status="ativo")
+                    s.add(cat)
+                    s.flush()
 
             return {
                 "classificacao": cat,
@@ -117,6 +118,68 @@ class Agent2:
         finally:
             if should_close:
                 s.close()
+
+    def consultar_dados_nota_fiscal(self, dados_json: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Consulta no banco se FORNECEDOR, FATURADO e DESPESA existem ou não,
+        SEM gravar nada no banco (apenas verificação prévia para confirmação do usuário).
+        """
+        session = self._get_session()
+        should_close = self.db_session is None
+        try:
+            forn_data = dados_json.get("fornecedor", {})
+            res_forn = self.verificar_pessoa_banco(
+                razao_social=forn_data.get("razaoSocial") or forn_data.get("nome") or "FORNECEDOR",
+                documento=forn_data.get("cnpj"),
+                nome_fantasia=forn_data.get("fantasia"),
+                tipo="CLIENTE-FORNECEDOR",
+                session=session,
+                criar_se_nao_existir=False
+            )
+
+            fat_data = dados_json.get("faturado", {})
+            res_fat = self.verificar_pessoa_banco(
+                razao_social=fat_data.get("nomeCompleto") or fat_data.get("nome") or "FATURADO",
+                documento=fat_data.get("cpf"),
+                tipo="FATURADO",
+                session=session,
+                criar_se_nao_existir=False
+            )
+
+            classificacoes_lista = dados_json.get("classificacaoDespesa", [])
+            primeira_cat = classificacoes_lista[0].get("categoria") if classificacoes_lista else "INSUMOS AGRÍCOLAS"
+            res_despesa = self.verificar_classificacao_banco(
+                descricao_cat=primeira_cat,
+                tipo="DESPESA",
+                session=session,
+                criar_se_nao_existir=False
+            )
+
+            return {
+                "status": "success",
+                "resposta_consulta": {
+                    "fornecedor": {
+                        "nome": res_forn["razao_social"],
+                        "cnpj": res_forn["documento"],
+                        "status_banco": res_forn["status_banco"],
+                        "existe": res_forn["ja_existia"]
+                    },
+                    "faturado": {
+                        "nome": res_fat["razao_social"],
+                        "cpf": res_fat["documento"],
+                        "status_banco": res_fat["status_banco"],
+                        "existe": res_fat["ja_existia"]
+                    },
+                    "despesa": {
+                        "descricao": res_despesa["descricao"],
+                        "status_banco": res_despesa["status_banco"],
+                        "existe": res_despesa["ja_existia"]
+                    }
+                }
+            }
+        finally:
+            if should_close:
+                session.close()
 
     def salvar_nota_fiscal(self, dados_json: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -340,6 +403,20 @@ class Agent2:
         except Exception as e:
             session.rollback()
             return {"status": "error", "message": f"Erro ao alterar status: {str(e)}"}
+        finally:
+            if should_close:
+                session.close()
+
+    def obter_movimento(self, id_movimento_contas: int) -> Optional[Dict[str, Any]]:
+        """
+        Recupera os detalhes completos de um movimento específico pelo ID,
+        incluindo suas parcelas, emitente, destinatário e classificações.
+        """
+        session = self._get_session()
+        should_close = self.db_session is None
+        try:
+            movimento = session.query(MovimentoContas).filter_by(id_movimento_contas=id_movimento_contas).first()
+            return movimento.to_dict() if movimento else None
         finally:
             if should_close:
                 session.close()
