@@ -969,9 +969,19 @@
         // Renderiza o quadro de consulta da Página 2 da UniRV
         function renderRespostaConsultaUniRV(res) {
             const consulta = res.consulta?.resposta_consulta || {};
+            const d = res.dados || {};
+
             const forn = consulta.fornecedor || {};
             const fat = consulta.faturado || {};
             const desp = consulta.despesa || {};
+
+            const fornNome = forn.nome || d.fornecedor?.razaoSocial || d.fornecedor?.fantasia || 'Não Identificado';
+            const fornDoc = forn.cnpj || d.fornecedor?.cnpj || 'Não identificado';
+
+            const fatNome = fat.nome || d.faturado?.nomeCompleto || 'Não Identificado';
+            const fatDoc = fat.cpf || d.faturado?.cpf || 'Não identificado';
+
+            const despDesc = desp.descricao || (d.classificacaoDespesa && d.classificacaoDespesa[0]?.categoria) || 'Não informada';
 
             const unirvTextOutput = document.getElementById('unirvTextOutput');
 
@@ -987,41 +997,48 @@
                 <!-- Bloco Fornecedor -->
                 <div class="bg-slate-950/70 p-4 rounded-xl border border-slate-800 space-y-1.5">
                     <span class="text-[10px] text-amber-400 uppercase tracking-wider block font-bold">FORNECEDOR:</span>
-                    <div class="font-bold text-white truncate text-xs" title="${forn.nome || 'N/A'}">${forn.nome || 'N/A'}</div>
-                    <div class="text-slate-400 text-[11px]">CNPJ: ${forn.cnpj || 'Não identificado'}</div>
+                    <div class="font-bold text-white truncate text-xs" title="${fornNome}">${fornNome}</div>
+                    <div class="text-slate-400 text-[11px]">CNPJ: ${fornDoc}</div>
                     <div class="pt-1">${getStatusBadge(forn.status_banco)}</div>
                 </div>
 
                 <!-- Bloco Faturado -->
                 <div class="bg-slate-950/70 p-4 rounded-xl border border-slate-800 space-y-1.5">
                     <span class="text-[10px] text-amber-400 uppercase tracking-wider block font-bold">FATURADO:</span>
-                    <div class="font-bold text-white truncate text-xs" title="${fat.nome || 'N/A'}">${fat.nome || 'N/A'}</div>
-                    <div class="text-slate-400 text-[11px]">CPF: ${fat.cpf || 'Não identificado'}</div>
+                    <div class="font-bold text-white truncate text-xs" title="${fatNome}">${fatNome}</div>
+                    <div class="text-slate-400 text-[11px]">CPF: ${fatDoc}</div>
                     <div class="pt-1">${getStatusBadge(fat.status_banco)}</div>
                 </div>
 
                 <!-- Bloco Despesa -->
                 <div class="bg-slate-950/70 p-4 rounded-xl border border-slate-800 space-y-1.5">
                     <span class="text-[10px] text-amber-400 uppercase tracking-wider block font-bold">DESPESA:</span>
-                    <div class="font-bold text-white truncate text-xs" title="${desp.descricao || 'N/A'}">${desp.descricao || 'N/A'}</div>
+                    <div class="font-bold text-white truncate text-xs" title="${despDesc}">${despDesc}</div>
                     <div class="text-slate-400 text-[11px]">Classificação Agrícola</div>
                     <div class="pt-1">${getStatusBadge(desp.status_banco)}</div>
                 </div>
             `;
 
-            // Resumo do Lançamento
-            const d = res.dados || {};
-            const fornData = d.fornecedor || {};
-            const valorTotal = d.totais?.valorTotalNota ?? d.totais?.valorTotal ?? 0;
-            const parcelasCount = d.cobranca?.parcelas?.length || (d.cobranca?.numeroFaturas ? parseInt(d.cobranca.numeroFaturas) : 1);
+            // Resumo do Lançamento com os campos exatos do Agent1 e fallbacks defensivos
+            const numNf = d.numeroNotaFiscal || d.dadosGerais?.numeroNotaFiscal || d.numero_nota_fiscal || 'S/N';
+            const dataEmissao = d.dataEmissao || d.dadosGerais?.dataEmissao || d.data_emissao || '-';
+            const valorTotal = (d.valorTotal !== undefined && d.valorTotal !== null) ? d.valorTotal : (d.totais?.valorTotalNota ?? d.totais?.valorTotal ?? d.valor_total ?? 0);
+            const parcelasCount = (d.parcelas && d.parcelas.length) || d.quantidadeParcelas || d.cobranca?.parcelas?.length || (d.cobranca?.numeroFaturas ? parseInt(d.cobranca.numeroFaturas) : 1);
 
-            document.getElementById('previewNumeroNf').textContent = d.dadosGerais?.numeroNotaFiscal || 'S/N';
-            document.getElementById('previewDataEmissao').textContent = d.dadosGerais?.dataEmissao || '-';
+            document.getElementById('previewNumeroNf').textContent = numNf;
+            document.getElementById('previewDataEmissao').textContent = dataEmissao;
             document.getElementById('previewValorTotal').textContent = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valorTotal);
             document.getElementById('previewParcelas').textContent = `${parcelasCount} parcela(s)`;
 
-            const produtos = (d.produtos || []).map(p => p.descricao || p.nome).join(', ') || 'Nenhum produto listado';
-            document.getElementById('previewProdutos').textContent = produtos;
+            let produtosTexto = 'Nenhum produto listado';
+            if (Array.isArray(d.descricaoProdutos) && d.descricaoProdutos.length > 0) {
+                produtosTexto = d.descricaoProdutos.map(p => typeof p === 'string' ? p : (p.descricao || p.nome || JSON.stringify(p))).join(' • ');
+            } else if (Array.isArray(d.produtos) && d.produtos.length > 0) {
+                produtosTexto = d.produtos.map(p => typeof p === 'string' ? p : (p.descricao || p.nome || '')).join(' • ');
+            } else if (typeof d.descricaoProdutos === 'string' && d.descricaoProdutos.trim()) {
+                produtosTexto = d.descricaoProdutos;
+            }
+            document.getElementById('previewProdutos').textContent = produtosTexto;
 
             jsonOutput.textContent = JSON.stringify(res.dados, null, 2);
             resultContainer.classList.remove('hidden');
