@@ -61,6 +61,14 @@
         ::-webkit-scrollbar-thumb:hover {
             background: #94a3b8;
         }
+
+        /* Impressão dos relatórios: mostra apenas o conteúdo do relatório */
+        @media print {
+            aside, header, .no-print, #toast { display: none !important; }
+            body, main { background: #fff !important; display: block !important; min-height: 0 !important; overflow: visible !important; }
+            #relatorioTab section { box-shadow: none !important; break-inside: avoid; }
+            #relatorioTab table { font-size: 10px; }
+        }
     </style>
 </head>
 <body class="h-full bg-slate-50 text-slate-800 font-sans flex flex-col md:flex-row antialiased selection:bg-brand-500 selection:text-white">
@@ -107,11 +115,45 @@
                     <i class="fa-solid fa-chevron-right text-[10px] opacity-70"></i>
                 </button>
 
-                <button onclick="switchTab('extracaoTab')" id="menuExtracao" 
+                <button onclick="switchTab('extracaoTab')" id="menuExtracao"
                     class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800/80 font-medium transition-all duration-150">
                     <i class="fa-solid fa-file-invoice-dollar text-sm text-emerald-400"></i>
                     <span class="flex-1 text-left">Extrair Nota Fiscal</span>
                     <i class="fa-solid fa-chevron-right text-[10px] opacity-70"></i>
+                </button>
+
+                <p class="px-2 pt-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Cadastros</p>
+
+                <button onclick="abrirCadastro('fornecedor')" id="menuCad-fornecedor" class="menu-cadastro w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800/80 font-medium transition-all duration-150">
+                    <i class="fa-solid fa-truck-field text-sm"></i>
+                    <span class="flex-1 text-left">Fornecedores</span>
+                </button>
+                <button onclick="abrirCadastro('cliente')" id="menuCad-cliente" class="menu-cadastro w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800/80 font-medium transition-all duration-150">
+                    <i class="fa-solid fa-handshake text-sm"></i>
+                    <span class="flex-1 text-left">Clientes</span>
+                </button>
+                <button onclick="abrirCadastro('faturado')" id="menuCad-faturado" class="menu-cadastro w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800/80 font-medium transition-all duration-150">
+                    <i class="fa-solid fa-user-check text-sm"></i>
+                    <span class="flex-1 text-left">Faturados</span>
+                </button>
+                <button onclick="abrirCadastro('tipoDespesa')" id="menuCad-tipoDespesa" class="menu-cadastro w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800/80 font-medium transition-all duration-150">
+                    <i class="fa-solid fa-tags text-sm text-rose-400"></i>
+                    <span class="flex-1 text-left">Tipos de Despesa</span>
+                </button>
+                <button onclick="abrirCadastro('tipoReceita')" id="menuCad-tipoReceita" class="menu-cadastro w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800/80 font-medium transition-all duration-150">
+                    <i class="fa-solid fa-tags text-sm text-emerald-400"></i>
+                    <span class="flex-1 text-left">Tipos de Receita</span>
+                </button>
+
+                <p class="px-2 pt-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Relatórios</p>
+
+                <button onclick="abrirRelatorio('pagar')" id="menuRel-pagar" class="menu-cadastro w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800/80 font-medium transition-all duration-150">
+                    <i class="fa-solid fa-file-invoice text-sm text-rose-400"></i>
+                    <span class="flex-1 text-left">Contas a Pagar</span>
+                </button>
+                <button onclick="abrirRelatorio('receber')" id="menuRel-receber" class="menu-cadastro w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800/80 font-medium transition-all duration-150">
+                    <i class="fa-solid fa-file-invoice text-sm text-emerald-400"></i>
+                    <span class="flex-1 text-left">Contas a Receber</span>
                 </button>
             </nav>
         </div>
@@ -125,6 +167,10 @@
             <div class="flex justify-between items-center">
                 <span>Ambiente:</span>
                 <span class="text-slate-300">{{ deploy_info.env if deploy_info else 'Desenvolvimento' }}</span>
+            </div>
+            <div class="flex justify-between items-center gap-2">
+                <span>Banco:</span>
+                <span class="text-emerald-300 text-right">{{ deploy_info.banco if deploy_info else '-' }}</span>
             </div>
         </div>
     </aside>
@@ -146,7 +192,7 @@
                     class="p-2 text-slate-500 hover:text-brand-600 hover:bg-slate-100 rounded-lg border border-slate-200 text-xs transition-colors">
                     <i class="fa-solid fa-arrows-rotate"></i>
                 </button>
-                <button onclick="abrirNovoModal()" id="btnTopNovo" 
+                <button onclick="novoRegistroDaAbaAtual()" id="btnTopNovo" 
                     class="px-4 py-2 bg-brand-600 hover:bg-brand-700 active:bg-brand-800 text-white text-xs font-semibold rounded-xl shadow-sm shadow-brand-600/30 flex items-center gap-2 transition-all">
                     <i class="fa-solid fa-plus text-xs"></i>
                     <span>Inserir Novo Registro</span>
@@ -159,7 +205,7 @@
             <!-- ===================================================================== -->
             <!-- CARDS DE RESUMO FINANCEIRO (BENTO GRID)                               -->
             <!-- ===================================================================== -->
-            <section class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <section id="cardsResumo" class="no-print grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow">
                     <div class="flex items-center justify-between mb-2">
                         <span class="text-xs font-semibold text-slate-500">Lançamentos Ativos</span>
@@ -219,9 +265,9 @@
                     </div>
 
                     <form id="searchForm" class="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
-                        <div class="md:col-span-6 relative">
+                        <div class="md:col-span-4 relative">
                             <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-                            <input type="text" id="termoInput" placeholder="Buscar por Razão Social, Nome Fantasia, CPF/CNPJ ou Nº NF..." 
+                            <input type="text" id="termoInput" placeholder="Ex.: iguaçu 84682 (Razão Social, CPF/CNPJ, Nº NF...)"
                                 class="w-full text-xs pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-brand-500 focus:outline-none transition-all placeholder:text-slate-400">
                         </div>
 
@@ -230,6 +276,14 @@
                                 <option value="todos">Todos os Tipos</option>
                                 <option value="Despesa">Despesa (Contas a Pagar)</option>
                                 <option value="Receita">Receita (Contas a Receber)</option>
+                            </select>
+                        </div>
+
+                        <div class="md:col-span-2">
+                            <select id="filtroStatus" title="Situação do registro" class="w-full text-xs px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-brand-500 focus:outline-none transition-all text-slate-700">
+                                <option value="ativo">Ativos</option>
+                                <option value="inativo">Inativos (excluídos)</option>
+                                <option value="todos">Ativos e Inativos</option>
                             </select>
                         </div>
 
@@ -450,6 +504,12 @@
                                 <span class="text-[10px] text-slate-400 font-mono bg-slate-800 px-2 py-0.5 rounded">Aguardando Confirmação</span>
                             </div>
 
+                            <!-- Aviso de Nota Fiscal já lançada (impede lançamento duplicado) -->
+                            <div id="nfDuplicadaAviso" class="hidden p-3 bg-rose-950/80 border border-rose-600/60 rounded-xl text-rose-200 text-xs font-mono flex items-center gap-2">
+                                <i class="fa-solid fa-ban text-rose-400"></i>
+                                <span id="nfDuplicadaTexto"></span>
+                            </div>
+
                             <!-- Blocos de Verificação do Fornecedor, Faturado e Despesa -->
                             <div id="unirvTextOutput" class="grid grid-cols-1 md:grid-cols-3 gap-4 font-mono text-xs">
                                 <!-- Preenchido dinamicamente via JS -->
@@ -563,8 +623,179 @@
                 </section>
             </div>
 
+            <!-- ===================================================================== -->
+            <!-- ABA 3: CADASTROS (MANTER FORNECEDOR / CLIENTE / FATURADO / TIPOS)      -->
+            <!-- Exclusão lógica (INATIVO) e reativação; STATUS oculto no formulário    -->
+            <!-- ===================================================================== -->
+            <div id="cadastroTab" class="hidden space-y-6">
+                <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
+                    <div class="border-b border-slate-100 pb-3">
+                        <h3 class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                            <i class="fa-solid fa-filter text-brand-600"></i> <span id="cadBuscaTitulo">Buscar</span>
+                        </h3>
+                    </div>
+                    <form id="cadSearchForm" class="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                        <div class="md:col-span-6 relative">
+                            <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                            <input type="text" id="cadTermoInput" placeholder="Buscar..."
+                                class="w-full text-xs pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-brand-500 focus:outline-none transition-all placeholder:text-slate-400">
+                        </div>
+                        <div class="md:col-span-2">
+                            <select id="cadFiltroStatus" class="w-full text-xs px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-brand-500 focus:outline-none transition-all text-slate-700">
+                                <option value="ativo">Ativos</option>
+                                <option value="inativo">Inativos</option>
+                                <option value="todos">Ativos e Inativos</option>
+                            </select>
+                        </div>
+                        <div class="md:col-span-2">
+                            <button type="submit" class="w-full py-2.5 px-4 bg-brand-600 hover:bg-brand-700 active:bg-brand-800 text-white text-xs font-bold rounded-xl shadow-sm flex items-center justify-center gap-2 transition-all">
+                                <i class="fa-solid fa-magnifying-glass"></i> <span>Buscar</span>
+                            </button>
+                        </div>
+                        <div class="md:col-span-2">
+                            <button type="button" onclick="cadCarregarTodos()" class="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-sm flex items-center justify-center gap-2 transition-all">
+                                <i class="fa-solid fa-layer-group"></i> <span>TODOS</span>
+                            </button>
+                        </div>
+                    </form>
+                </section>
+
+                <section class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div class="p-4 sm:p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50">
+                        <div class="flex items-center gap-2">
+                            <h3 id="cadTabelaTitulo" class="text-xs font-bold text-slate-900 uppercase tracking-wider">Lista</h3>
+                            <span id="cadBadgeContador" class="hidden text-[10px] bg-brand-50 text-brand-700 font-mono font-bold px-2 py-0.5 rounded-full border border-brand-200">0 encontrados</span>
+                        </div>
+                        <button onclick="abrirModalCadastro()" class="px-3.5 py-1.5 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold rounded-lg shadow-sm flex items-center gap-1.5 transition-all">
+                            <i class="fa-solid fa-plus text-[10px]"></i> <span id="cadBtnNovoTexto">Novo</span>
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse text-xs">
+                            <thead>
+                                <tr id="cadTheadRow" class="bg-slate-100/90 text-slate-700 font-bold text-[11px] border-b border-slate-200 select-none tracking-tight"></tr>
+                            </thead>
+                            <tbody id="cadTableBody" class="divide-y divide-slate-100"></tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+
+            <!-- ===================================================================== -->
+            <!-- ABA 4: RELATÓRIOS DE CONTAS A PAGAR / CONTAS A RECEBER                 -->
+            <!-- NFs ativas com suas naturezas (classificações) e situação de pagamento -->
+            <!-- ===================================================================== -->
+            <div id="relatorioTab" class="hidden space-y-6">
+                <section class="no-print bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
+                    <div class="border-b border-slate-100 pb-3">
+                        <h3 class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                            <i class="fa-solid fa-sliders text-brand-600"></i> Filtros do Relatório
+                        </h3>
+                    </div>
+                    <form id="relFiltrosForm" class="grid grid-cols-2 md:grid-cols-12 gap-3 items-end text-xs">
+                        <div class="md:col-span-2">
+                            <label class="block font-bold text-slate-600 mb-1">Emissão de</label>
+                            <input type="date" id="relDataInicio" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                        </div>
+                        <div class="md:col-span-2">
+                            <label class="block font-bold text-slate-600 mb-1">Emissão até</label>
+                            <input type="date" id="relDataFim" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                        </div>
+                        <div class="md:col-span-2">
+                            <label class="block font-bold text-slate-600 mb-1">Situação</label>
+                            <select id="relSituacao" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                                <option value="todas">Todas</option>
+                                <option value="abertas">Em aberto</option>
+                                <option value="vencidas">Vencidas</option>
+                                <option value="quitadas">Quitadas</option>
+                            </select>
+                        </div>
+                        <div class="col-span-2 md:col-span-3">
+                            <label class="block font-bold text-slate-600 mb-1">Natureza</label>
+                            <select id="relNatureza" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                                <option value="">Todas as naturezas</option>
+                            </select>
+                        </div>
+                        <div class="md:col-span-2">
+                            <button type="submit" class="w-full py-2.5 px-4 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-xl shadow-sm flex items-center justify-center gap-2">
+                                <i class="fa-solid fa-chart-column"></i> Gerar
+                            </button>
+                        </div>
+                        <div class="md:col-span-1">
+                            <button type="button" onclick="window.print()" title="Imprimir / salvar em PDF" class="w-full py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl border border-slate-200 flex items-center justify-center">
+                                <i class="fa-solid fa-print"></i>
+                            </button>
+                        </div>
+                    </form>
+                </section>
+
+                <div id="relConteudo" class="space-y-6">
+                    <!-- Preenchido via JS -->
+                </div>
+            </div>
+
         </div>
     </main>
+
+    <!-- ===================================================================== -->
+    <!-- MODAL: FORMULÁRIO DE CADASTRO (PESSOAS / CLASSIFICAÇÃO)               -->
+    <!-- CREATE: status oculto == ativo | UPDATE: status oculto e inalterado   -->
+    <!-- ===================================================================== -->
+    <div id="modalCadastro" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs hidden z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden">
+            <div class="bg-slate-900 text-white px-6 py-4 flex justify-between items-center border-b border-slate-800">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center text-white text-xs">
+                        <i class="fa-solid fa-address-card"></i>
+                    </div>
+                    <h3 id="cadModalTitulo" class="font-bold text-sm text-white">Cadastro</h3>
+                </div>
+                <button type="button" onclick="fecharModalCadastro()" class="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors">
+                    <i class="fa-solid fa-xmark text-sm"></i>
+                </button>
+            </div>
+            <form id="formCadastro" class="p-6 space-y-4 text-xs">
+                <input type="hidden" id="cadId">
+                <div id="cadCamposPessoa" class="space-y-3">
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">Razão Social / Nome Completo</label>
+                        <input type="text" id="cadRazaoSocial" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">Nome Fantasia</label>
+                        <input type="text" id="cadNomeFantasia" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block font-bold text-slate-700 mb-1">CPF / CNPJ</label>
+                            <input type="text" id="cadDocumento" placeholder="Somente números ou com máscara" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-brand-500 focus:outline-none font-mono">
+                        </div>
+                        <div>
+                            <label class="block font-bold text-slate-700 mb-1">Tipo</label>
+                            <select id="cadTipoPessoa" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                                <option value="CLIENTE-FORNECEDOR">CLIENTE-FORNECEDOR</option>
+                                <option value="FORNECEDOR">FORNECEDOR</option>
+                                <option value="CLIENTE">CLIENTE</option>
+                                <option value="FATURADO">FATURADO</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div id="cadCamposClassificacao" class="space-y-3 hidden">
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">Descrição</label>
+                        <input type="text" id="cadDescricao" placeholder="Ex.: MANUTENÇÃO E OPERAÇÃO" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-brand-500 focus:outline-none uppercase">
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2.5 pt-4 border-t border-slate-200">
+                    <button type="button" onclick="fecharModalCadastro()" class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-all">Cancelar</button>
+                    <button type="submit" class="px-6 py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-xl shadow-sm flex items-center gap-2 transition-all">
+                        <i class="fa-solid fa-floppy-disk"></i> Salvar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <!-- ===================================================================== -->
     <!-- MODAL 1: FORMULÁRIO DE MOVIMENTO (CREATE / UPDATE)                     -->
@@ -627,12 +858,12 @@
                 <!-- Seção Fornecedor (Pessoas) -->
                 <div class="p-3.5 bg-slate-50/70 rounded-xl border border-slate-200 space-y-2">
                     <span class="font-bold text-slate-700 block uppercase text-[10px] tracking-wider flex items-center gap-1.5">
-                        <i class="fa-solid fa-building text-slate-500"></i> Fornecedor / Emitente (Pessoas)
+                        <i class="fa-solid fa-building text-slate-500"></i> <span id="modalEmitenteLabel">Fornecedor / Emitente (Pessoas)</span>
                     </span>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <input type="text" id="modalEmitenteNome" placeholder="Razão Social ou Nome Fantasia" required
                             class="px-3 py-2 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none">
-                        <input type="text" id="modalEmitenteDoc" placeholder="CNPJ ou CPF (Apenas números)" 
+                        <input type="text" id="modalEmitenteDoc" placeholder="CNPJ ou CPF" 
                             class="px-3 py-2 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none font-mono">
                     </div>
                 </div>
@@ -656,20 +887,13 @@
                         <label class="block font-bold text-slate-700 mb-1">Qtd Parcelas (Vencimento Mensal)</label>
                         <input type="number" id="modalParcelas" min="1" value="1" 
                             class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                        <p id="modalParcelasAviso" class="hidden text-[10px] text-slate-400 mt-1">As parcelas já geradas não são recalculadas na edição.</p>
                     </div>
                     <div>
-                        <label class="block font-bold text-slate-700 mb-1">Classificação (Despesa/Receita)</label>
-                        <select id="modalCategoria" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-brand-500 focus:outline-none">
-                            <option value="INSUMOS AGRÍCOLAS">INSUMOS AGRÍCOLAS</option>
-                            <option value="MANUTENÇÃO E OPERAÇÃO">MANUTENÇÃO E OPERAÇÃO</option>
-                            <option value="RECURSOS HUMANOS">RECURSOS HUMANOS</option>
-                            <option value="SERVIÇOS OPERACIONAIS">SERVIÇOS OPERACIONAIS</option>
-                            <option value="INFRAESTRUTURA E UTILIDADES">INFRAESTRUTURA E UTILIDADES</option>
-                            <option value="ADMINISTRATIVAS">ADMINISTRATIVAS</option>
-                            <option value="SEGUROS E PROTEÇÃO">SEGUROS E PROTEÇÃO</option>
-                            <option value="IMPOSTOS E TAXAS">IMPOSTOS E TAXAS</option>
-                            <option value="INVESTIMENTOS">INVESTIMENTOS</option>
-                        </select>
+                        <label id="modalCategoriaLabel" class="block font-bold text-slate-700 mb-1">Tipos de Despesa (um ou mais)</label>
+                        <div id="modalCategorias" class="max-h-32 overflow-y-auto p-2 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                            <!-- Preenchido via JS com as classificações ativas do banco -->
+                        </div>
                     </div>
                 </div>
 
@@ -767,13 +991,14 @@
                     <i class="fa-solid fa-triangle-exclamation"></i>
                 </div>
                 <div>
-                    <h3 class="text-sm font-bold text-slate-900">Excluir Lançamento</h3>
+                    <h3 id="deleteTitulo" class="text-sm font-bold text-slate-900">Excluir Lançamento</h3>
                     <p class="text-xs text-slate-500">Confirmação de exclusão</p>
                 </div>
             </div>
             
             <p class="text-xs text-slate-600 leading-relaxed">
-                Tem certeza de que deseja excluir o lançamento <strong id="deleteItemId" class="font-mono text-slate-900">#--</strong>? Esta ação removerá o registro do sistema.
+                Tem certeza de que deseja excluir <span id="deleteItemTipo">o lançamento</span> <strong id="deleteItemId" class="font-mono text-slate-900">#--</strong>?
+                O registro ficará <strong>INATIVO</strong> (exclusão lógica) e poderá ser reativado pelo filtro "Inativos".
             </p>
 
             <div class="flex justify-end gap-2.5 pt-2">
@@ -802,7 +1027,6 @@
         // Estado Global
         let currentMovimentos = [];
         let sortDirection = {};
-        let currentStatusFilter = 'ativo';
         let dadosExtraidosEmEspera = null; // Armazena dados extraídos aguardando confirmação do usuário
 
         // Chave API LocalStorage
@@ -853,28 +1077,36 @@
             }
         });
 
+        // Escapa textos vindos do banco/PDF antes de inserir via innerHTML
+        function escapeHtml(valor) {
+            return String(valor ?? '').replace(/[&<>"']/g, ch => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            })[ch]);
+        }
+
+        const formatarMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor || 0);
+
         // Alternância de Abas
-        function switchTab(tabId) {
-            document.getElementById('gestaoTab').classList.add('hidden');
-            document.getElementById('extracaoTab').classList.add('hidden');
+        const MENU_ATIVO = "w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-white bg-brand-600 shadow-md shadow-brand-600/30 font-semibold transition-all";
+        const MENU_INATIVO = "w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800/80 font-medium transition-all";
+        const ABAS = {
+            gestaoTab: { menu: 'menuGestao', titulo: "Gestão de Lançamentos & Contas", sub: "Contas a Pagar e a Receber: MovimentoContas, Pessoas, Classificação e Parcelas" },
+            extracaoTab: { menu: 'menuExtracao', titulo: "Processamento & Extração de Nota Fiscal", sub: "Leitura e conferência de entidades no banco relacional" },
+            cadastroTab: { menu: null, titulo: "Cadastros", sub: "" },
+            relatorioTab: { menu: null, titulo: "Relatórios", sub: "" }
+        };
+
+        function switchTab(tabId, menuId = null, titulo = null, sub = null) {
+            const aba = ABAS[tabId];
+            Object.keys(ABAS).forEach(id => document.getElementById(id).classList.add('hidden'));
             document.getElementById(tabId).classList.remove('hidden');
 
-            const menuGestao = document.getElementById('menuGestao');
-            const menuExtracao = document.getElementById('menuExtracao');
-            const pageHeading = document.getElementById('pageHeading');
-            const pageSubheading = document.getElementById('pageSubheading');
+            document.querySelectorAll('#menuGestao, #menuExtracao, .menu-cadastro').forEach(btn => btn.className = MENU_INATIVO + (btn.classList.contains('menu-cadastro') ? ' menu-cadastro' : ''));
+            const menu = document.getElementById(menuId || aba.menu);
+            if (menu) menu.className = MENU_ATIVO + (menu.classList.contains('menu-cadastro') ? ' menu-cadastro' : '');
 
-            if (tabId === 'gestaoTab') {
-                menuGestao.className = "w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-white bg-brand-600 shadow-md shadow-brand-600/30 font-semibold transition-all";
-                menuExtracao.className = "w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800/80 font-medium transition-all";
-                pageHeading.textContent = "Gestão de Lançamentos & Contas";
-                pageSubheading.textContent = "Consulta de MovimentoContas, Pessoas, Classificação e Parcelas";
-            } else {
-                menuExtracao.className = "w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-white bg-brand-600 shadow-md shadow-brand-600/30 font-semibold transition-all";
-                menuGestao.className = "w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800/80 font-medium transition-all";
-                pageHeading.textContent = "Processamento & Extração de Nota Fiscal";
-                pageSubheading.textContent = "Leitura e conferência de entidades no banco relacional";
-            }
+            document.getElementById('pageHeading').textContent = titulo || aba.titulo;
+            document.getElementById('pageSubheading').textContent = sub ?? aba.sub;
         }
 
         // Validação do Formulário de Upload
@@ -973,7 +1205,8 @@
 
             const forn = consulta.fornecedor || {};
             const fat = consulta.faturado || {};
-            const desp = consulta.despesa || {};
+            const despesas = consulta.despesas || (consulta.despesa ? [consulta.despesa] : []);
+            const nf = consulta.nota_fiscal || {};
 
             const fornNome = forn.nome || d.fornecedor?.razaoSocial || d.fornecedor?.fantasia || 'Não Identificado';
             const fornDoc = forn.cnpj || d.fornecedor?.cnpj || 'Não identificado';
@@ -981,43 +1214,65 @@
             const fatNome = fat.nome || d.faturado?.nomeCompleto || 'Não Identificado';
             const fatDoc = fat.cpf || d.faturado?.cpf || 'Não identificado';
 
-            const despDesc = desp.descricao || (d.classificacaoDespesa && d.classificacaoDespesa[0]?.categoria) || 'Não informada';
-
             const unirvTextOutput = document.getElementById('unirvTextOutput');
 
             function getStatusBadge(statusStr) {
                 if (!statusStr) return '<span class="text-slate-400">NÃO INFORMADO</span>';
+                if (statusStr.includes('(INATIVO)')) {
+                    return `<span class="inline-flex items-center gap-1 text-amber-300 font-bold bg-amber-950/80 px-2 py-0.5 rounded border border-amber-600/50"><i class="fa-solid fa-rotate-left text-[10px]"></i> ${escapeHtml(statusStr)} – SERÁ REATIVADO</span>`;
+                }
                 if (statusStr.includes('EXISTE – ID') || statusStr.includes('EXISTE - ID')) {
-                    return `<span class="inline-flex items-center gap-1 text-emerald-400 font-bold bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-600/50"><i class="fa-solid fa-check text-[10px]"></i> ${statusStr}</span>`;
+                    return `<span class="inline-flex items-center gap-1 text-emerald-400 font-bold bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-600/50"><i class="fa-solid fa-check text-[10px]"></i> ${escapeHtml(statusStr)}</span>`;
                 }
                 return `<span class="inline-flex items-center gap-1 text-amber-300 font-bold bg-amber-950/80 px-2 py-0.5 rounded border border-amber-600/50"><i class="fa-solid fa-plus text-[10px]"></i> NÃO EXISTE (SERÁ CRIADO)</span>`;
             }
+
+            const despesasHtml = despesas.length
+                ? despesas.map(desp => `
+                    <div class="space-y-1">
+                        <div class="font-bold text-white truncate text-xs" title="${escapeHtml(desp.descricao)}">${escapeHtml(desp.descricao)}</div>
+                        <div>${getStatusBadge(desp.status_banco)}</div>
+                    </div>`).join('')
+                : '<div class="text-slate-400">Não informada</div>';
 
             unirvTextOutput.innerHTML = `
                 <!-- Bloco Fornecedor -->
                 <div class="bg-slate-950/70 p-4 rounded-xl border border-slate-800 space-y-1.5">
                     <span class="text-[10px] text-amber-400 uppercase tracking-wider block font-bold">FORNECEDOR:</span>
-                    <div class="font-bold text-white truncate text-xs" title="${fornNome}">${fornNome}</div>
-                    <div class="text-slate-400 text-[11px]">CNPJ: ${fornDoc}</div>
+                    <div class="font-bold text-white truncate text-xs" title="${escapeHtml(fornNome)}">${escapeHtml(fornNome)}</div>
+                    <div class="text-slate-400 text-[11px]">CNPJ: ${escapeHtml(fornDoc)}</div>
                     <div class="pt-1">${getStatusBadge(forn.status_banco)}</div>
                 </div>
 
                 <!-- Bloco Faturado -->
                 <div class="bg-slate-950/70 p-4 rounded-xl border border-slate-800 space-y-1.5">
                     <span class="text-[10px] text-amber-400 uppercase tracking-wider block font-bold">FATURADO:</span>
-                    <div class="font-bold text-white truncate text-xs" title="${fatNome}">${fatNome}</div>
-                    <div class="text-slate-400 text-[11px]">CPF: ${fatDoc}</div>
+                    <div class="font-bold text-white truncate text-xs" title="${escapeHtml(fatNome)}">${escapeHtml(fatNome)}</div>
+                    <div class="text-slate-400 text-[11px]">CPF: ${escapeHtml(fatDoc)}</div>
                     <div class="pt-1">${getStatusBadge(fat.status_banco)}</div>
                 </div>
 
-                <!-- Bloco Despesa -->
-                <div class="bg-slate-950/70 p-4 rounded-xl border border-slate-800 space-y-1.5">
+                <!-- Bloco Despesa (uma ou mais classificações) -->
+                <div class="bg-slate-950/70 p-4 rounded-xl border border-slate-800 space-y-2">
                     <span class="text-[10px] text-amber-400 uppercase tracking-wider block font-bold">DESPESA:</span>
-                    <div class="font-bold text-white truncate text-xs" title="${despDesc}">${despDesc}</div>
-                    <div class="text-slate-400 text-[11px]">Classificação Agrícola</div>
-                    <div class="pt-1">${getStatusBadge(desp.status_banco)}</div>
+                    ${despesasHtml}
                 </div>
             `;
+
+            // Nota já lançada: bloqueia a confirmação para não duplicar o movimento
+            const aviso = document.getElementById('nfDuplicadaAviso');
+            const btnConfirmar = document.getElementById('btnConfirmarGravacao');
+            if (nf.duplicada) {
+                document.getElementById('nfDuplicadaTexto').textContent =
+                    `NOTA FISCAL ${nf.numero || ''} JÁ LANÇADA PARA ESTE FORNECEDOR (Movimento #${nf.id_movimento_existente}). O lançamento foi bloqueado.`;
+                aviso.classList.remove('hidden');
+                btnConfirmar.disabled = true;
+                btnConfirmar.classList.add('opacity-50', 'cursor-not-allowed');
+            } else {
+                aviso.classList.add('hidden');
+                btnConfirmar.disabled = false;
+                btnConfirmar.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
 
             // Resumo do Lançamento com os campos exatos do Agent1 e fallbacks defensivos
             const numNf = d.numeroNotaFiscal || d.dadosGerais?.numeroNotaFiscal || d.numero_nota_fiscal || 'S/N';
@@ -1083,7 +1338,8 @@
                 // Exibe bloco de sucesso
                 document.getElementById('boxConfirmacao').classList.add('hidden');
                 document.getElementById('boxSucessoGravacao').classList.remove('hidden');
-                document.getElementById('successDetailMsg').textContent = `ID do MovimentoContas gerado: #${p.id_movimento_contas || '--'} | Status inicial ativo.`;
+                const reativados = (p.reativados || []).length ? ` | Cadastros reativados: ${p.reativados.join(', ')}` : '';
+                document.getElementById('successDetailMsg').textContent = `ID do MovimentoContas gerado: #${p.id_movimento_contas || '--'} | Status inicial ativo.${reativados}`;
 
                 // Renderiza tabela de parcelas geradas
                 const parcelas = p.dados?.parcelas || [];
@@ -1096,12 +1352,12 @@
                     parcelas.forEach(pr => {
                         const tr = document.createElement('tr');
                         tr.innerHTML = `
-                            <td class="py-1.5 px-3 text-brand-300 font-bold">${pr.identificacao}</td>
+                            <td class="py-1.5 px-3 text-brand-300 font-bold">${escapeHtml(pr.identificacao)}</td>
                             <td class="py-1.5 px-3 text-slate-300">${pr.data_vencimento || '-'}</td>
                             <td class="py-1.5 px-3 text-white">R$ ${(pr.valor_parcela || 0).toFixed(2)}</td>
                             <td class="py-1.5 px-3 text-amber-300">R$ ${(pr.valor_saldo || 0).toFixed(2)}</td>
                             <td class="py-1.5 px-3 text-center">
-                                <span class="bg-amber-900/60 text-amber-300 px-1.5 py-0.5 rounded text-[10px] uppercase font-bold border border-amber-700/60">${pr.status}</span>
+                                <span class="bg-amber-900/60 text-amber-300 px-1.5 py-0.5 rounded text-[10px] uppercase font-bold border border-amber-700/60">${escapeHtml(pr.status)}</span>
                             </td>
                         `;
                         parcelasPreviewBody.appendChild(tr);
@@ -1115,7 +1371,7 @@
             } catch (err) {
                 showToast(`Erro ao gravar: ${err.message}`, "error");
             } finally {
-                btnConfirmar.disabled = false;
+                btnConfirmar.disabled = dadosExtraidosEmEspera === null;
                 btnConfirmar.innerHTML = `<i class="fa-solid fa-circle-check"></i> <span>Confirmar e Lançar no Banco</span>`;
             }
         }
@@ -1133,19 +1389,22 @@
         btnTodos.addEventListener('click', carregarTodos);
 
         function carregarTodos() {
+            // TODOS: limpa os filtros e carrega somente registros com status = ATIVO
             document.getElementById('termoInput').value = '';
             document.getElementById('filtroTipo').value = 'todos';
+            document.getElementById('filtroStatus').value = 'ativo';
             buscarMovimentos();
         }
 
         async function buscarMovimentos() {
             const termo = document.getElementById('termoInput').value.trim();
             const tipo = document.getElementById('filtroTipo').value;
+            const status = document.getElementById('filtroStatus').value;
 
             const url = new URL('/api/movimentos', window.location.origin);
             if (termo) url.searchParams.append('termo', termo);
             if (tipo && tipo !== 'todos') url.searchParams.append('tipo', tipo);
-            url.searchParams.append('status', 'ativo');
+            url.searchParams.append('status', status);
 
             try {
                 const response = await fetch(url);
@@ -1163,7 +1422,7 @@
             }
         }
 
-        // Renderiza Tabela (Apenas registros ativos, sem coluna de status)
+        // Renderiza Tabela (status só aparece como selo quando o registro está inativo)
         function renderTable(data) {
             tableBody.innerHTML = '';
 
@@ -1182,15 +1441,14 @@
 
             data.forEach(item => {
                 const tr = document.createElement('tr');
-                tr.className = 'hover:bg-slate-50/80 transition-colors';
+                const inativo = item.status === 'inativo';
+                tr.className = inativo ? 'bg-slate-50 text-slate-400' : 'hover:bg-slate-50/80 transition-colors';
 
-                const emitenteNome = item.emitente?.razao_social || 'Não informado';
-                const emitenteDoc = item.emitente?.documento ? `<span class="text-[10px] text-slate-400 font-mono block">${item.emitente.documento}</span>` : '';
+                const emitenteNome = escapeHtml(item.emitente?.razao_social || 'Não informado');
+                const emitenteDoc = item.emitente?.documento ? `<span class="text-[10px] text-slate-400 font-mono block">${escapeHtml(item.emitente.documento)}</span>` : '';
                 
-                const destNome = item.destinatario?.razao_social || 'Não informado';
-                const destDoc = item.destinatario?.documento ? `<span class="text-[10px] text-slate-400 font-mono block">${item.destinatario.documento}</span>` : '';
-
-                const valFormatado = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.valor_total || 0);
+                const destNome = escapeHtml(item.destinatario?.razao_social || 'Não informado');
+                const destDoc = item.destinatario?.documento ? `<span class="text-[10px] text-slate-400 font-mono block">${escapeHtml(item.destinatario.documento)}</span>` : '';
 
                 const tipoBadge = item.tipo === 'Despesa'
                     ? `<span class="text-rose-600 font-semibold inline-flex items-center gap-1 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200"><i class="fa-solid fa-arrow-down text-[9px]"></i> Despesa</span>`
@@ -1198,9 +1456,16 @@
 
                 const parcelasCount = item.parcelas?.length || 0;
                 const parcelasQuitadas = item.parcelas?.filter(p => p.status === 'quitada').length || 0;
+                const seloInativo = inativo ? `<span class="block text-[9px] font-bold text-rose-500 font-sans">INATIVO</span>` : '';
 
-                const acoesHtml = `
-                    <div class="flex items-center justify-center gap-1">
+                const acoesHtml = inativo
+                    ? `<div class="flex items-center justify-center">
+                           <button onclick="reativarMovimento(${item.id_movimento_contas})" title="Reativar Lançamento"
+                               class="px-2 py-1 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg text-[10px] font-bold flex items-center gap-1">
+                               <i class="fa-solid fa-rotate-left"></i> Reativar
+                           </button>
+                       </div>`
+                    : `<div class="flex items-center justify-center gap-1">
                         <button onclick="openEditModal(${item.id_movimento_contas})" title="Editar Lançamento" 
                             class="p-1.5 text-brand-600 hover:text-brand-800 hover:bg-brand-50 rounded-lg transition-colors">
                             <i class="fa-solid fa-pen-to-square text-sm"></i>
@@ -1209,18 +1474,17 @@
                             class="p-1.5 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-lg transition-colors">
                             <i class="fa-solid fa-trash-can text-sm"></i>
                         </button>
-                    </div>
-                `;
+                    </div>`;
 
                 // Linha gerada com 9 colunas
                 tr.innerHTML = `
-                    <td class="py-3.5 px-4 font-mono font-bold text-slate-500">#${item.id_movimento_contas}</td>
-                    <td class="py-3.5 px-4 font-mono font-semibold text-slate-800">${item.numero_nota_fiscal || 'S/N'}</td>
+                    <td class="py-3.5 px-4 font-mono font-bold text-slate-500">#${item.id_movimento_contas}${seloInativo}</td>
+                    <td class="py-3.5 px-4 font-mono font-semibold text-slate-800">${escapeHtml(item.numero_nota_fiscal || 'S/N')}</td>
                     <td class="py-3.5 px-4">${tipoBadge}</td>
                     <td class="py-3.5 px-4 font-medium text-slate-900">${emitenteNome}${emitenteDoc}</td>
                     <td class="py-3.5 px-4 font-medium text-slate-900">${destNome}${destDoc}</td>
-                    <td class="py-3.5 px-4 text-slate-600 font-mono">${item.data_emissao || '-'}</td>
-                    <td class="py-3.5 px-4 font-bold font-mono ${item.tipo === 'Despesa' ? 'text-rose-600' : 'text-emerald-600'}">${valFormatado}</td>
+                    <td class="py-3.5 px-4 text-slate-600 font-mono">${escapeHtml(item.data_emissao || '-')}</td>
+                    <td class="py-3.5 px-4 font-bold font-mono ${item.tipo === 'Despesa' ? 'text-rose-600' : 'text-emerald-600'}">${formatarMoeda(item.valor_total)}</td>
                     <td class="py-3.5 px-3 text-center">
                         <button onclick="abrirModalParcelas(${item.id_movimento_contas})" title="Ver e Quitar Parcelas" 
                             class="px-2 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-md font-mono text-[10px] text-slate-700 flex items-center gap-1 mx-auto transition-colors">
@@ -1233,73 +1497,96 @@
             });
         }
 
-        // Indexação por Coluna
-        function sortTable(column) {
-            sortDirection[column] = !sortDirection[column];
-            const asc = sortDirection[column];
-
-            document.querySelectorAll('[id^="sort-"]').forEach(icon => {
-                icon.className = "fa-solid fa-sort text-slate-400";
-            });
-            const targetIcon = document.getElementById(`sort-${column}`);
-            if (targetIcon) {
-                targetIcon.className = asc ? "fa-solid fa-sort-up text-brand-600 font-bold" : "fa-solid fa-sort-down text-brand-600 font-bold";
-            }
-
-            currentMovimentos.sort((a, b) => {
-                let valA = a[column];
-                let valB = b[column];
-
-                if (column === 'emitente') valA = a.emitente?.razao_social || '';
-                if (column === 'destinatario') valB = b.destinatario?.razao_social || '';
-
+        // Ordena uma lista pelo valor retornado por 'obterValor' (indexação por coluna)
+        function ordenarLista(lista, obterValor, asc) {
+            lista.sort((a, b) => {
+                let valA = obterValor(a);
+                let valB = obterValor(b);
                 if (typeof valA === 'string') valA = valA.toLowerCase();
                 if (typeof valB === 'string') valB = valB.toLowerCase();
-
                 if (valA < valB) return asc ? -1 : 1;
                 if (valA > valB) return asc ? 1 : -1;
                 return 0;
             });
+        }
+
+        function atualizarIconesOrdenacao(prefixo, coluna, asc) {
+            document.querySelectorAll(`[id^="${prefixo}"]`).forEach(icon => {
+                icon.className = "fa-solid fa-sort text-slate-400";
+            });
+            const targetIcon = document.getElementById(`${prefixo}${coluna}`);
+            if (targetIcon) {
+                targetIcon.className = asc ? "fa-solid fa-sort-up text-brand-600 font-bold" : "fa-solid fa-sort-down text-brand-600 font-bold";
+            }
+        }
+
+        // Indexação por Coluna
+        function sortTable(column) {
+            sortDirection[column] = !sortDirection[column];
+            const asc = sortDirection[column];
+            atualizarIconesOrdenacao('sort-', column, asc);
+
+            ordenarLista(currentMovimentos, item => {
+                if (column === 'emitente') return item.emitente?.razao_social || '';
+                if (column === 'destinatario') return item.destinatario?.razao_social || '';
+                return item[column] ?? '';
+            }, asc);
 
             renderTable(currentMovimentos);
         }
 
-        // Telinha / Modal de Confirmação de Exclusão
-        let idMovimentoParaExcluir = null;
+        // Telinha / Modal de Confirmação de Exclusão (lógica: status = inativo)
+        // Compartilhada entre lançamentos e cadastros
+        let exclusaoPendente = null;
 
-        function abrirModalExclusao(id) {
-            idMovimentoParaExcluir = id;
+        function abrirModalConfirmacaoExclusao({ url, titulo, descricao, id, aoConcluir }) {
+            exclusaoPendente = { url, id, aoConcluir };
+            document.getElementById('deleteTitulo').textContent = titulo;
+            document.getElementById('deleteItemTipo').textContent = descricao;
             document.getElementById('deleteItemId').textContent = `#${id}`;
             document.getElementById('modalExcluir').classList.remove('hidden');
         }
 
+        function abrirModalExclusao(id) {
+            abrirModalConfirmacaoExclusao({
+                url: `/api/movimentos/${id}/status`,
+                titulo: 'Excluir Lançamento',
+                descricao: 'o lançamento',
+                id,
+                aoConcluir: () => { buscarMovimentos(); carregarResumo(); }
+            });
+        }
+
         function fecharModalExclusao() {
-            idMovimentoParaExcluir = null;
+            exclusaoPendente = null;
             document.getElementById('modalExcluir').classList.add('hidden');
         }
 
-        async function confirmarExclusao() {
-            if (!idMovimentoParaExcluir) return;
+        async function alterarStatus(url, status) {
+            const response = await fetch(url, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status })
+            });
+            return response.json();
+        }
 
-            const id = idMovimentoParaExcluir;
+        async function confirmarExclusao() {
+            if (!exclusaoPendente) return;
+
+            const { url, id, aoConcluir } = exclusaoPendente;
             const btn = document.getElementById('btnConfirmarExclusao');
             btn.disabled = true;
             btn.innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i> Excluindo...`;
 
             try {
-                const response = await fetch(`/api/movimentos/${id}/status`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status: 'inativo' })
-                });
-                const res = await response.json();
+                const res = await alterarStatus(url, 'inativo');
                 if (res.status === 'success') {
                     fecharModalExclusao();
-                    showToast(`Lançamento #${id} excluído com sucesso!`, "success");
-                    buscarMovimentos();
-                    carregarResumo();
+                    showToast(`Registro #${id} excluído (inativado) com sucesso!`, "success");
+                    aoConcluir();
                 } else {
-                    showToast(res.message || 'Erro ao excluir lançamento.', "error");
+                    showToast(res.message || 'Erro ao excluir registro.', "error");
                 }
             } catch (err) {
                 showToast(`Erro: ${err.message}`, "error");
@@ -1309,11 +1596,63 @@
             }
         }
 
-        // Formulário de Cadastro e Edição
+        async function reativarMovimento(id) {
+            try {
+                const res = await alterarStatus(`/api/movimentos/${id}/status`, 'ativo');
+                showToast(res.status === 'success' ? `Lançamento #${id} reativado com sucesso!` : res.message, res.status === 'success' ? 'success' : 'error');
+                buscarMovimentos();
+                carregarResumo();
+            } catch (err) {
+                showToast(`Erro: ${err.message}`, "error");
+            }
+        }
+
+        // Formulário de Cadastro e Edição de Lançamentos (Contas a Pagar / a Receber)
+        const modalTipo = document.getElementById('modalTipo');
+
+        function atualizarRotulosModal(tipo) {
+            const receita = tipo === 'Receita';
+            document.getElementById('modalEmitenteLabel').textContent = receita ? 'Cliente / Emitente (Pessoas)' : 'Fornecedor / Emitente (Pessoas)';
+            document.getElementById('modalCategoriaLabel').textContent = receita ? 'Tipos de Receita (um ou mais)' : 'Tipos de Despesa (um ou mais)';
+        }
+
+        async function carregarCategoriasModal(tipo, selecionadas = []) {
+            const container = document.getElementById('modalCategorias');
+            container.innerHTML = '<span class="text-slate-400">Carregando...</span>';
+            try {
+                const response = await fetch(`/api/classificacoes?tipo=${encodeURIComponent(tipo)}&status=ativo`);
+                const res = await response.json();
+                const cats = res.dados || [];
+                if (!cats.length) {
+                    container.innerHTML = `<span class="text-slate-400">Nenhum Tipo de ${tipo} ativo. Cadastre em "Cadastros".</span>`;
+                    return;
+                }
+                container.innerHTML = cats.map(c => `
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" name="modalCategoria" value="${escapeHtml(c.descricao)}" ${selecionadas.includes(c.descricao) ? 'checked' : ''}
+                            class="rounded border-slate-300 text-brand-600 focus:ring-brand-500">
+                        <span>${escapeHtml(c.descricao)}</span>
+                    </label>`).join('');
+            } catch (err) {
+                container.innerHTML = '<span class="text-rose-500">Erro ao carregar classificações.</span>';
+            }
+        }
+
+        modalTipo.addEventListener('change', () => {
+            atualizarRotulosModal(modalTipo.value);
+            carregarCategoriasModal(modalTipo.value);
+        });
+
         function abrirNovoModal() {
             modalTitle.textContent = "Novo Lançamento - Projeto UniRV";
             modalId.value = "";
             formMovimento.reset();
+            const filtro = document.getElementById('filtroTipo').value;
+            modalTipo.value = filtro === 'Receita' ? 'Receita' : 'Despesa';
+            document.getElementById('modalParcelas').disabled = false;
+            document.getElementById('modalParcelasAviso').classList.add('hidden');
+            atualizarRotulosModal(modalTipo.value);
+            carregarCategoriasModal(modalTipo.value);
             modalMovimento.classList.remove('hidden');
         }
 
@@ -1324,7 +1663,7 @@
             modalTitle.textContent = `Editar Lançamento #${id}`;
             modalId.value = id;
 
-            document.getElementById('modalTipo').value = item.tipo || 'Despesa';
+            modalTipo.value = item.tipo || 'Despesa';
             document.getElementById('modalNumeroNf').value = item.numero_nota_fiscal || '';
             document.getElementById('modalDataEmissao').value = item.data_emissao || '';
             document.getElementById('modalValorTotal').value = item.valor_total || 0;
@@ -1335,13 +1674,14 @@
             document.getElementById('modalDestinatarioNome').value = item.destinatario?.razao_social || '';
             document.getElementById('modalDestinatarioDoc').value = item.destinatario?.documento || '';
 
+            // Parcelas já geradas não são recalculadas na edição
             document.getElementById('modalParcelas').value = item.parcelas?.length || 1;
+            document.getElementById('modalParcelas').disabled = true;
+            document.getElementById('modalParcelasAviso').classList.remove('hidden');
             document.getElementById('modalDescricao').value = item.descricao_produtos || '';
 
-            if (item.classificacoes && item.classificacoes.length > 0) {
-                document.getElementById('modalCategoria').value = item.classificacoes[0].categoria || 'INSUMOS AGRÍCOLAS';
-            }
-
+            atualizarRotulosModal(modalTipo.value);
+            carregarCategoriasModal(modalTipo.value, (item.classificacoes || []).map(c => c.categoria));
             modalMovimento.classList.remove('hidden');
         }
 
@@ -1351,9 +1691,15 @@
         formMovimento.addEventListener('submit', async (e) => {
             e.preventDefault();
 
+            const categorias = [...document.querySelectorAll('input[name="modalCategoria"]:checked')].map(cb => cb.value);
+            if (!categorias.length) {
+                showToast(`Selecione ao menos um Tipo de ${modalTipo.value}.`, "error");
+                return;
+            }
+
             const id = modalId.value;
             const payload = {
-                tipo: document.getElementById('modalTipo').value,
+                tipo: modalTipo.value,
                 numero_nota_fiscal: document.getElementById('modalNumeroNf').value,
                 data_emissao: document.getElementById('modalDataEmissao').value,
                 valor_total: parseFloat(document.getElementById('modalValorTotal').value || 0),
@@ -1362,7 +1708,7 @@
                 destinatario_nome: document.getElementById('modalDestinatarioNome').value,
                 destinatario_documento: document.getElementById('modalDestinatarioDoc').value,
                 quantidade_parcelas: parseInt(document.getElementById('modalParcelas').value || 1),
-                categoria: document.getElementById('modalCategoria').value,
+                categorias,
                 descricao_produtos: document.getElementById('modalDescricao').value
             };
 
@@ -1381,6 +1727,7 @@
                     modalMovimento.classList.add('hidden');
                     showToast(id ? "Lançamento atualizado com sucesso!" : "Registro criado com sucesso!", "success");
                     buscarMovimentos();
+                    if (!document.getElementById('relatorioTab').classList.contains('hidden')) gerarRelatorio();
                     carregarResumo();
                 } else {
                     showToast(res.message || 'Erro ao salvar registro.', "error");
@@ -1438,7 +1785,7 @@
                     : `<button onclick="quitarParcela(${p.id_parcela})" class="px-2 py-1 bg-brand-600 hover:bg-brand-700 text-white rounded text-[10px] font-bold shadow-xs">Quitar</button>`;
 
                 tr.innerHTML = `
-                    <td class="py-2.5 px-3 font-bold text-slate-700">${p.identificacao}</td>
+                    <td class="py-2.5 px-3 font-bold text-slate-700">${escapeHtml(p.identificacao)}</td>
                     <td class="py-2.5 px-3 text-slate-600">${p.data_vencimento || '-'}</td>
                     <td class="py-2.5 px-3">R$ ${(p.valor_parcela || 0).toFixed(2)}</td>
                     <td class="py-2.5 px-3 text-emerald-600">R$ ${(p.valor_pago || 0).toFixed(2)}</td>
@@ -1451,7 +1798,8 @@
         }
 
         async function quitarParcela(idParcela) {
-            if (!confirm(`Confirmar o pagamento/quitação da parcela #${idParcela}?`)) return;
+            const identificacao = activeMovimentoForParcelas?.parcelas?.find(p => p.id_parcela === idParcela)?.identificacao;
+            if (!confirm(`Confirmar o pagamento/quitação da parcela ${identificacao || '#' + idParcela}?`)) return;
 
             try {
                 const response = await fetch(`/api/parcelas/${idParcela}/pagar`, {
@@ -1473,6 +1821,388 @@
             } catch (err) {
                 showToast("Erro: " + err.message, "error");
             }
+        }
+
+        // =====================================================================
+        // CADASTROS (MANTER FORNECEDOR / CLIENTE / FATURADO / TIPOS)
+        // Tabela inicia vazia; TODOS carrega ativos; exclusão lógica e reativação
+        // =====================================================================
+        const CADASTROS = {
+            fornecedor:  { entidade: 'pessoas', titulo: 'Fornecedores', singular: 'Fornecedor', tipos: ['FORNECEDOR', 'CLIENTE-FORNECEDOR'], tipoPadrao: 'CLIENTE-FORNECEDOR' },
+            cliente:     { entidade: 'pessoas', titulo: 'Clientes', singular: 'Cliente', tipos: ['CLIENTE', 'CLIENTE-FORNECEDOR'], tipoPadrao: 'CLIENTE' },
+            faturado:    { entidade: 'pessoas', titulo: 'Faturados', singular: 'Faturado', tipos: ['FATURADO'], tipoPadrao: 'FATURADO' },
+            tipoDespesa: { entidade: 'classificacoes', titulo: 'Tipos de Despesa', singular: 'Tipo de Despesa', tipo: 'Despesa' },
+            tipoReceita: { entidade: 'classificacoes', titulo: 'Tipos de Receita', singular: 'Tipo de Receita', tipo: 'Receita' }
+        };
+
+        const COLUNAS_CADASTRO = {
+            pessoas: [
+                { campo: 'id_pessoa', rotulo: 'ID' },
+                { campo: 'razao_social', rotulo: 'Razão Social / Nome' },
+                { campo: 'nome_fantasia', rotulo: 'Nome Fantasia' },
+                { campo: 'documento', rotulo: 'CPF / CNPJ' },
+                { campo: 'tipo', rotulo: 'Tipo' }
+            ],
+            classificacoes: [
+                { campo: 'id_classificacao', rotulo: 'ID' },
+                { campo: 'descricao', rotulo: 'Descrição' },
+                { campo: 'tipo', rotulo: 'Tipo' }
+            ]
+        };
+
+        let cadAtual = null;
+        let cadRegistros = [];
+        let cadOrdenacao = {};
+
+        const cadIdDe = (item) => item.id_pessoa ?? item.id_classificacao;
+
+        function abrirCadastro(chave) {
+            cadAtual = { chave, ...CADASTROS[chave] };
+            cadRegistros = [];
+            cadOrdenacao = {};
+            switchTab('cadastroTab', `menuCad-${chave}`, `Manter ${cadAtual.titulo}`,
+                cadAtual.entidade === 'pessoas' ? 'Cadastro de Pessoas (exclusão lógica: registros são inativados, nunca apagados)' : 'Cadastro de Classificações (exclusão lógica: registros são inativados, nunca apagados)');
+
+            document.getElementById('cadBuscaTitulo').textContent = `Buscar ${cadAtual.titulo}`;
+            document.getElementById('cadTabelaTitulo').textContent = `Lista de ${cadAtual.titulo}`;
+            document.getElementById('cadBtnNovoTexto').textContent = `Novo ${cadAtual.singular}`;
+            document.getElementById('cadTermoInput').value = '';
+            document.getElementById('cadTermoInput').placeholder = cadAtual.entidade === 'pessoas'
+                ? 'Ex.: beltrano 999.999 (nome, fantasia, CPF/CNPJ...)'
+                : 'Buscar pela descrição...';
+            document.getElementById('cadFiltroStatus').value = 'ativo';
+            document.getElementById('cadBadgeContador').classList.add('hidden');
+
+            document.getElementById('cadTheadRow').innerHTML = COLUNAS_CADASTRO[cadAtual.entidade].map(col => `
+                <th class="py-3.5 px-4 cursor-pointer hover:bg-slate-200/70 transition-colors" onclick="cadOrdenar('${col.campo}')">
+                    <div class="flex items-center gap-1.5">
+                        <span>${col.rotulo}</span>
+                        <i class="fa-solid fa-sort text-slate-400" id="cadsort-${col.campo}"></i>
+                    </div>
+                </th>`).join('') + '<th class="py-3.5 px-4 text-center">Ações</th>';
+
+            renderCadTabela(null);  // Tabela inicia vazia
+        }
+
+        // Botão do topo: abre o formulário correspondente à aba visível
+        function novoRegistroDaAbaAtual() {
+            if (!document.getElementById('cadastroTab').classList.contains('hidden') && cadAtual) {
+                abrirModalCadastro();
+            } else if (!document.getElementById('relatorioTab').classList.contains('hidden') && relAtual) {
+                document.getElementById('filtroTipo').value = relAtual.tipo;
+                abrirNovoModal();
+            } else {
+                abrirNovoModal();
+            }
+        }
+
+        function cadCarregarTodos() {
+            document.getElementById('cadTermoInput').value = '';
+            document.getElementById('cadFiltroStatus').value = 'ativo';
+            cadBuscar();
+        }
+
+        document.getElementById('cadSearchForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            cadBuscar();
+        });
+
+        async function cadBuscar() {
+            if (!cadAtual) return;
+            const url = new URL(`/api/${cadAtual.entidade}`, window.location.origin);
+            const termo = document.getElementById('cadTermoInput').value.trim();
+            if (termo) url.searchParams.append('termo', termo);
+            url.searchParams.append('status', document.getElementById('cadFiltroStatus').value);
+            if (cadAtual.entidade === 'pessoas') url.searchParams.append('tipo', cadAtual.tipos.join(','));
+            else url.searchParams.append('tipo', cadAtual.tipo);
+
+            try {
+                const res = await (await fetch(url)).json();
+                cadRegistros = res.dados || [];
+                renderCadTabela(cadRegistros);
+                const badge = document.getElementById('cadBadgeContador');
+                badge.textContent = `${cadRegistros.length} encontrados`;
+                badge.classList.remove('hidden');
+            } catch (err) {
+                showToast("Erro ao conectar com o servidor.", "error");
+            }
+        }
+
+        function renderCadTabela(lista) {
+            const tbody = document.getElementById('cadTableBody');
+            const colunas = COLUNAS_CADASTRO[cadAtual.entidade];
+            const colspan = colunas.length + 1;
+
+            if (lista === null) {
+                tbody.innerHTML = `
+                    <tr><td colspan="${colspan}" class="py-14 text-center text-slate-400 bg-white">
+                        <i class="fa-solid fa-box-open text-2xl mb-2 block text-slate-300"></i>
+                        <p class="font-bold text-slate-700 text-sm mb-1">Nenhum registro exibido</p>
+                        <p class="text-xs">Clique em <strong>"Buscar"</strong> ou em <strong>"TODOS"</strong> para carregar os ${escapeHtml(cadAtual.titulo.toLowerCase())}.</p>
+                    </td></tr>`;
+                return;
+            }
+            if (!lista.length) {
+                tbody.innerHTML = `<tr><td colspan="${colspan}" class="py-12 text-center text-slate-400 bg-white">Nenhum registro encontrado.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = lista.map(item => {
+                const id = cadIdDe(item);
+                const inativo = item.status === 'inativo';
+                const celulas = colunas.map((col, i) => {
+                    const valor = escapeHtml(item[col.campo] ?? '-');
+                    const selo = i === 0 && inativo ? '<span class="block text-[9px] font-bold text-rose-500 font-sans">INATIVO</span>' : '';
+                    return `<td class="py-3 px-4 ${i === 0 ? 'font-mono font-bold text-slate-500' : 'text-slate-800'}">${i === 0 ? '#' : ''}${valor}${selo}</td>`;
+                }).join('');
+                const acoes = inativo
+                    ? `<button onclick="cadReativar(${id})" class="px-2 py-1 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg text-[10px] font-bold inline-flex items-center gap-1">
+                           <i class="fa-solid fa-rotate-left"></i> Reativar</button>`
+                    : `<button onclick="abrirModalCadastro(${id})" title="Editar" class="p-1.5 text-brand-600 hover:text-brand-800 hover:bg-brand-50 rounded-lg"><i class="fa-solid fa-pen-to-square text-sm"></i></button>
+                       <button onclick="cadExcluir(${id})" title="Excluir (inativar)" class="p-1.5 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-lg"><i class="fa-solid fa-trash-can text-sm"></i></button>`;
+                return `<tr class="${inativo ? 'bg-slate-50' : 'hover:bg-slate-50/80'}">${celulas}<td class="py-3 px-4 text-center whitespace-nowrap">${acoes}</td></tr>`;
+            }).join('');
+        }
+
+        function cadOrdenar(campo) {
+            if (!cadRegistros.length) return;
+            cadOrdenacao[campo] = !cadOrdenacao[campo];
+            atualizarIconesOrdenacao('cadsort-', campo, cadOrdenacao[campo]);
+            ordenarLista(cadRegistros, item => item[campo] ?? '', cadOrdenacao[campo]);
+            renderCadTabela(cadRegistros);
+        }
+
+        function abrirModalCadastro(id = null) {
+            const item = id ? cadRegistros.find(r => cadIdDe(r) === id) : null;
+            const pessoa = cadAtual.entidade === 'pessoas';
+            document.getElementById('formCadastro').reset();
+            document.getElementById('cadId').value = id || '';
+            document.getElementById('cadModalTitulo').textContent = id ? `Editar ${cadAtual.singular} #${id}` : `Novo ${cadAtual.singular}`;
+            document.getElementById('cadCamposPessoa').classList.toggle('hidden', !pessoa);
+            document.getElementById('cadCamposClassificacao').classList.toggle('hidden', pessoa);
+
+            if (pessoa) {
+                document.getElementById('cadRazaoSocial').value = item?.razao_social || '';
+                document.getElementById('cadNomeFantasia').value = item?.nome_fantasia || '';
+                document.getElementById('cadDocumento').value = item?.documento || '';
+                document.getElementById('cadTipoPessoa').value = item?.tipo || cadAtual.tipoPadrao;
+            } else {
+                document.getElementById('cadDescricao').value = item?.descricao || '';
+            }
+            document.getElementById('modalCadastro').classList.remove('hidden');
+        }
+
+        function fecharModalCadastro() {
+            document.getElementById('modalCadastro').classList.add('hidden');
+        }
+
+        document.getElementById('formCadastro').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('cadId').value;
+            const payload = cadAtual.entidade === 'pessoas'
+                ? {
+                    razao_social: document.getElementById('cadRazaoSocial').value,
+                    nome_fantasia: document.getElementById('cadNomeFantasia').value,
+                    documento: document.getElementById('cadDocumento').value,
+                    tipo: document.getElementById('cadTipoPessoa').value
+                }
+                : { descricao: document.getElementById('cadDescricao').value, tipo: cadAtual.tipo };
+
+            try {
+                const response = await fetch(id ? `/api/${cadAtual.entidade}/${id}` : `/api/${cadAtual.entidade}`, {
+                    method: id ? 'PUT' : 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const res = await response.json();
+                if (res.status === 'success') {
+                    fecharModalCadastro();
+                    showToast(res.message, 'success');
+                    cadBuscar();
+                } else {
+                    showToast(res.message || 'Erro ao salvar cadastro.', 'error');
+                }
+            } catch (err) {
+                showToast(`Erro: ${err.message}`, 'error');
+            }
+        });
+
+        function cadExcluir(id) {
+            abrirModalConfirmacaoExclusao({
+                url: `/api/${cadAtual.entidade}/${id}/status`,
+                titulo: `Excluir ${cadAtual.singular}`,
+                descricao: `o cadastro de ${cadAtual.singular.toLowerCase()}`,
+                id,
+                aoConcluir: cadBuscar
+            });
+        }
+
+        async function cadReativar(id) {
+            try {
+                const res = await alterarStatus(`/api/${cadAtual.entidade}/${id}/status`, 'ativo');
+                showToast(res.message, res.status === 'success' ? 'success' : 'error');
+                cadBuscar();
+            } catch (err) {
+                showToast(`Erro: ${err.message}`, 'error');
+            }
+        }
+
+        // =====================================================================
+        // RELATÓRIOS: CONTAS A PAGAR / CONTAS A RECEBER
+        // =====================================================================
+        const RELATORIOS = {
+            pagar:   { titulo: 'Contas a Pagar',   tipo: 'Despesa', pessoa: 'Fornecedor', cor: 'rose' },
+            receber: { titulo: 'Contas a Receber', tipo: 'Receita', pessoa: 'Cliente',    cor: 'emerald' }
+        };
+        let relAtual = null;
+
+        const SELO_SITUACAO = {
+            'QUITADA':   'bg-emerald-50 text-emerald-700 border-emerald-200',
+            'EM ABERTO': 'bg-amber-50 text-amber-700 border-amber-200',
+            'PARCIAL':   'bg-sky-50 text-sky-700 border-sky-200',
+            'VENCIDA':   'bg-rose-50 text-rose-700 border-rose-200'
+        };
+
+        const formatarData = (iso) => iso ? iso.split('-').reverse().join('/') : '-';
+
+        async function abrirRelatorio(chave) {
+            relAtual = { chave, ...RELATORIOS[chave] };
+            switchTab('relatorioTab', `menuRel-${chave}`, `Relatório de ${relAtual.titulo}`,
+                `NFs ativas de ${relAtual.tipo.toLowerCase()} com suas naturezas e situação de pagamento`);
+
+            // Naturezas disponíveis = Tipos de Despesa ou de Receita cadastrados
+            const select = document.getElementById('relNatureza');
+            select.innerHTML = '<option value="">Todas as naturezas</option>';
+            try {
+                const res = await (await fetch(`/api/classificacoes?tipo=${relAtual.tipo}&status=todos`)).json();
+                (res.dados || []).forEach(c => select.insertAdjacentHTML('beforeend',
+                    `<option value="${escapeHtml(c.descricao)}">${escapeHtml(c.descricao)}</option>`));
+            } catch (err) { /* filtro de natureza fica só com "Todas" */ }
+
+            gerarRelatorio();
+        }
+
+        document.getElementById('relFiltrosForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            gerarRelatorio();
+        });
+
+        async function gerarRelatorio() {
+            if (!relAtual) return;
+            const url = new URL(`/api/relatorios/${relAtual.chave}`, window.location.origin);
+            const filtros = {
+                data_inicio: document.getElementById('relDataInicio').value,
+                data_fim: document.getElementById('relDataFim').value,
+                situacao: document.getElementById('relSituacao').value,
+                natureza: document.getElementById('relNatureza').value
+            };
+            Object.entries(filtros).forEach(([k, v]) => v && url.searchParams.append(k, v));
+
+            const conteudo = document.getElementById('relConteudo');
+            conteudo.innerHTML = '<p class="text-xs text-slate-400">Gerando relatório...</p>';
+            try {
+                const res = await (await fetch(url)).json();
+                if (res.status !== 'success') throw new Error(res.message);
+                renderRelatorio(res.dados);
+            } catch (err) {
+                conteudo.innerHTML = '';
+                showToast(`Erro ao gerar relatório: ${err.message}`, 'error');
+            }
+        }
+
+        function renderRelatorio(rel) {
+            const t = rel.totais;
+            const cor = relAtual.cor;
+            const periodo = (rel.filtros.data_inicio || rel.filtros.data_fim)
+                ? `Emissão de ${formatarData(rel.filtros.data_inicio)} até ${formatarData(rel.filtros.data_fim)}`
+                : 'Todo o período';
+            const rotuloPago = relAtual.chave === 'pagar' ? 'Pago' : 'Recebido';
+
+            const card = (rotulo, valor, classe) => `
+                <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm">
+                    <span class="text-xs font-semibold text-slate-500">${rotulo}</span>
+                    <div class="text-lg font-bold font-mono ${classe}">${valor}</div>
+                </div>`;
+
+            const linhasNatureza = rel.por_natureza.map(n => `
+                <tr>
+                    <td class="py-2.5 px-4 font-semibold text-slate-800">${escapeHtml(n.natureza)}</td>
+                    <td class="py-2.5 px-4 text-center font-mono">${n.quantidade_nfs}</td>
+                    <td class="py-2.5 px-4 text-right font-mono">${formatarMoeda(n.valor)}</td>
+                    <td class="py-2.5 px-4 text-right font-mono text-amber-700">${formatarMoeda(n.saldo)}</td>
+                    <td class="py-2.5 px-4 text-right font-mono text-slate-500">${t.valor_total ? (n.valor / t.valor_total * 100).toFixed(1) : '0.0'}%</td>
+                </tr>`).join('');
+
+            const linhasNotas = rel.notas.map(n => `
+                <tr class="align-top">
+                    <td class="py-2.5 px-3 font-mono font-semibold text-slate-800">${escapeHtml(n.numero_nota_fiscal || 'S/N')}
+                        <span class="block text-[10px] text-slate-400 font-normal">#${n.id_movimento_contas}</span></td>
+                    <td class="py-2.5 px-3 font-mono text-slate-600">${formatarData(n.data_emissao)}</td>
+                    <td class="py-2.5 px-3 text-slate-800">${escapeHtml(n.emitente || '-')}
+                        <span class="block text-[10px] text-slate-400 font-mono">${escapeHtml(n.emitente_documento || '')}</span></td>
+                    <td class="py-2.5 px-3 text-slate-600">${escapeHtml(n.destinatario || '-')}</td>
+                    <td class="py-2.5 px-3">${n.naturezas.map(nat => `<span class="inline-block mb-0.5 mr-1 px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-[10px] font-semibold text-slate-700">${escapeHtml(nat)}</span>`).join('') || '-'}</td>
+                    <td class="py-2.5 px-3 text-right font-mono font-bold">${formatarMoeda(n.valor_total)}</td>
+                    <td class="py-2.5 px-3 text-right font-mono text-amber-700">${formatarMoeda(n.saldo)}</td>
+                    <td class="py-2.5 px-3 text-center font-mono text-[11px]">${n.parcelas_quitadas}/${n.parcelas_total}
+                        <span class="block text-[10px] text-slate-400">${n.proximo_vencimento ? 'próx. ' + formatarData(n.proximo_vencimento) : ''}</span></td>
+                    <td class="py-2.5 px-3 text-center"><span class="inline-block px-2 py-0.5 rounded-md border text-[10px] font-bold ${SELO_SITUACAO[n.situacao] || ''}">${n.situacao}</span></td>
+                </tr>`).join('');
+
+            document.getElementById('relConteudo').innerHTML = `
+                <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
+                    <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
+                        <div>
+                            <h3 class="text-base font-bold text-slate-900">Relatório de ${escapeHtml(rel.titulo)}</h3>
+                            <p class="text-xs text-slate-500">${periodo} • Situação: ${escapeHtml(rel.filtros.situacao)}${rel.filtros.natureza ? ' • Natureza: ' + escapeHtml(rel.filtros.natureza) : ''}</p>
+                        </div>
+                        <p class="text-[11px] text-slate-400 font-mono">Gerado em ${formatarData(rel.gerado_em)}</p>
+                    </div>
+                </section>
+
+                <section class="grid grid-cols-2 lg:grid-cols-5 gap-4">
+                    ${card('Notas Fiscais', t.quantidade_nfs, 'text-slate-900')}
+                    ${card('Valor Total', formatarMoeda(t.valor_total), `text-${cor}-600`)}
+                    ${card(rotuloPago, formatarMoeda(t.valor_pago), 'text-emerald-600')}
+                    ${card('Saldo em Aberto', formatarMoeda(t.saldo_aberto), 'text-amber-600')}
+                    ${card('Saldo Vencido', formatarMoeda(t.saldo_vencido), 'text-rose-600')}
+                </section>
+
+                <section class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div class="p-4 border-b border-slate-200 bg-slate-50/50">
+                        <h3 class="text-xs font-bold text-slate-900 uppercase tracking-wider">Totais por Natureza</h3>
+                        <p class="text-[10px] text-slate-400">NF com mais de uma natureza tem o valor rateado igualmente entre elas.</p>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse text-xs">
+                            <thead><tr class="bg-slate-100/90 text-slate-700 font-bold text-[11px] border-b border-slate-200">
+                                <th class="py-2.5 px-4">Natureza</th><th class="py-2.5 px-4 text-center">NFs</th>
+                                <th class="py-2.5 px-4 text-right">Valor</th><th class="py-2.5 px-4 text-right">Saldo em Aberto</th>
+                                <th class="py-2.5 px-4 text-right">% do Total</th>
+                            </tr></thead>
+                            <tbody class="divide-y divide-slate-100">${linhasNatureza || '<tr><td colspan="5" class="py-6 text-center text-slate-400">Sem dados no período.</td></tr>'}</tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div class="p-4 border-b border-slate-200 bg-slate-50/50">
+                        <h3 class="text-xs font-bold text-slate-900 uppercase tracking-wider">Notas Fiscais (${rel.notas.length})</h3>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse text-xs">
+                            <thead><tr class="bg-slate-100/90 text-slate-700 font-bold text-[11px] border-b border-slate-200">
+                                <th class="py-2.5 px-3">Nº NF</th><th class="py-2.5 px-3">Emissão</th>
+                                <th class="py-2.5 px-3">${relAtual.pessoa} / Emitente</th><th class="py-2.5 px-3">Faturado</th>
+                                <th class="py-2.5 px-3">Natureza</th><th class="py-2.5 px-3 text-right">Valor</th>
+                                <th class="py-2.5 px-3 text-right">Saldo</th><th class="py-2.5 px-3 text-center">Parcelas</th>
+                                <th class="py-2.5 px-3 text-center">Situação</th>
+                            </tr></thead>
+                            <tbody class="divide-y divide-slate-100">${linhasNotas || '<tr><td colspan="9" class="py-10 text-center text-slate-400">Nenhuma NF encontrada com estes filtros.</td></tr>'}</tbody>
+                        </table>
+                    </div>
+                </section>
+            `;
         }
 
         // Resumo Financeiro
@@ -1510,7 +2240,7 @@
             }
 
             toastContent.className = `px-4 py-3 rounded-xl shadow-2xl border text-xs font-semibold flex items-center gap-2 ${bgClass}`;
-            toastContent.innerHTML = `${icon} <span>${message}</span>`;
+            toastContent.innerHTML = `${icon} <span>${escapeHtml(message)}</span>`;
 
             toast.classList.remove('hidden', 'opacity-0', 'translate-y-2');
             toast.classList.add('opacity-100', 'translate-y-0');
