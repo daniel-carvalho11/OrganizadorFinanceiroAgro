@@ -4,6 +4,16 @@ from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
 
+
+def formatar_documento(documento):
+    """Exibe CPF (11 dígitos) ou CNPJ (14 dígitos) com máscara; demais valores ficam como estão."""
+    d = "".join(ch for ch in (documento or "") if ch.isdigit())
+    if len(d) == 11:
+        return f"{d[:3]}.{d[3:6]}.{d[6:9]}-{d[9:]}"
+    if len(d) == 14:
+        return f"{d[:2]}.{d[2:5]}.{d[5:8]}/{d[8:12]}-{d[12:]}"
+    return documento
+
 class Pessoa(Base):
     __tablename__ = "pessoas"
 
@@ -32,7 +42,7 @@ class Pessoa(Base):
             "tipo": self.tipo,
             "razao_social": self.razao_social,
             "nome_fantasia": self.nome_fantasia,
-            "documento": self.documento,
+            "documento": formatar_documento(self.documento),
             "status": self.status
         }
 
@@ -134,5 +144,6 @@ class MovimentoHasClassificacao(Base):
         return {
             "id_classificacao": self.id_classificacao,
             "categoria": self.classificacao.descricao if self.classificacao else None,
+            "tipo": self.classificacao.tipo if self.classificacao else None,
             "justificativa": self.justificativa
         }

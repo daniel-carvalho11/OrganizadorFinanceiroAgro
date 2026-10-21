@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS movimento_has_classificacao (
 );
 
 -- =====================================================================
--- POPULAÇÃO INICIAL: Categorias Padrão de Despesas Rurais
+-- POPULAÇÃO INICIAL: Categorias Padrão de Despesas e Receitas Rurais
 -- =====================================================================
 INSERT INTO classificacao (tipo, descricao, status) VALUES
     ('Despesa', 'INSUMOS AGRÍCOLAS', 'ativo'),
@@ -67,5 +67,10 @@ INSERT INTO classificacao (tipo, descricao, status) VALUES
     ('Despesa', 'ADMINISTRATIVAS', 'ativo'),
     ('Despesa', 'SEGUROS E PROTEÇÃO', 'ativo'),
     ('Despesa', 'IMPOSTOS E TAXAS', 'ativo'),
-    ('Despesa', 'INVESTIMENTOS', 'ativo')
+    ('Despesa', 'INVESTIMENTOS', 'ativo'),
+    ('Receita', 'VENDA DE PRODUÇÃO AGRÍCOLA', 'ativo'),
+    ('Receita', 'VENDA DE ANIMAIS', 'ativo'),
+    ('Receita', 'PRESTAÇÃO DE SERVIÇOS', 'ativo'),
+    ('Receita', 'ARRENDAMENTO RECEBIDO', 'ativo'),
+    ('Receita', 'OUTRAS RECEITAS', 'ativo')
 ON CONFLICT (descricao) DO NOTHING;

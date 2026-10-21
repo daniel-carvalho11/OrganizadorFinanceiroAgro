@@ -1,16 +1,21 @@
-import os
 from typing import Dict, Any, List, Optional
 from datetime import datetime
-from sqlalchemy import or_, cast, String
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 from database import SessionLocal
 from models import Pessoa, MovimentoContas, Parcela, Classificacao, MovimentoHasClassificacao
-from servico_persistencia import salvar_nota_fiscal, parse_data, calcular_vencimento_parcela, ajustar_dia_util
+from servico_persistencia import (
+    salvar_nota_fiscal, parse_data, calcular_vencimento_parcela, identificacao_parcela,
+    normalizar_documento, normalizar_tipo_classificacao, buscar_pessoa, buscar_classificacao,
+    buscar_movimento_duplicado, mensagem_duplicidade, validar_documento, filtro_multitermos
+)
+
+CATEGORIA_PADRAO = "INSUMOS AGRÍCOLAS"
+
 
 class Agent2:
     """
     Agent 2 - Especialista em Persistência, Gestão Financeira e Validação Relacional.
-    
+
     Funções Principais (Conforme especificações da UniRV - N2 2ª Etapa):
     1. Consultar se FORNECEDOR (CNPJ), FATURADO (CPF/CNPJ) e CLASSIFICAÇÃO DA DESPESA existem no banco.
     2. Exibir a resposta dessa consulta na tela (ex: FORNECEDOR: IGUAÇU MAQUINAS LTDA - NÃO EXISTE / EXISTE - ID: 19).
@@ -26,6 +31,14 @@ class Agent2:
     def _get_session(self) -> Session:
         return self.db_session or SessionLocal()
 
+    @staticmethod
+    def _status_banco(entidade_id: Optional[int], status: Optional[str]) -> str:
+        """Texto exibido na tela: 'EXISTE – ID: 19', 'EXISTE – ID: 19 (INATIVO)' ou 'NÃO EXISTE'."""
+        if entidade_id is None:
+            return "NÃO EXISTE"
+        sufixo = " (INATIVO)" if status == "inativo" else ""
+        return f"EXISTE – ID: {entidade_id}{sufixo}"
+
     def verificar_pessoa_banco(
         self,
         razao_social: str,
@@ -36,32 +49,26 @@ class Agent2:
         criar_se_nao_existir: bool = True
     ) -> Dict[str, Any]:
         """
-        Consulta se a Pessoa (Fornecedor ou Faturado) já existe no Banco de Dados.
-        Retorna os dados da consulta (EXISTE – ID: X ou NÃO EXISTE) e a entidade Pessoa (ou None se não criar).
+        Consulta se a Pessoa (Fornecedor ou Faturado) já existe no Banco de Dados (CPF/CNPJ sem máscara).
+        Ao gravar (criar_se_nao_existir=True): cria a pessoa se não existir e reativa se estiver inativa.
         """
         s = session or self._get_session()
         should_close = session is None and self.db_session is None
 
         try:
-            doc_limpo = (documento or "").strip()
+            doc_limpo = normalizar_documento(documento)
             razao_limpa = (razao_social or "Não Identificado").strip()
 
-            pessoa = None
-            if doc_limpo:
-                pessoa = s.query(Pessoa).filter_by(documento=doc_limpo).first()
-            if not pessoa and razao_limpa:
-                pessoa = s.query(Pessoa).filter_by(razao_social=razao_limpa).first()
+            pessoa = buscar_pessoa(s, doc_limpo, razao_limpa)
+            ja_existia = pessoa is not None
+            inativo = ja_existia and pessoa.status == "inativo"
+            status_banco = self._status_banco(pessoa.id_pessoa if pessoa else None, pessoa.status if pessoa else None)
+            reativado = False
 
-            if pessoa:
-                status_banco = f"EXISTE – ID: {pessoa.id_pessoa}"
-                ja_existia = True
-            else:
-                status_banco = "NÃO EXISTE"
-                ja_existia = False
-                if criar_se_nao_existir:
-                    tipo_pessoa = tipo or ("FATURADO" if doc_limpo and len(doc_limpo) <= 14 else "CLIENTE-FORNECEDOR")
+            if criar_se_nao_existir:
+                if not pessoa:
                     pessoa = Pessoa(
-                        tipo=tipo_pessoa,
+                        tipo=tipo,
                         razao_social=razao_limpa,
                         nome_fantasia=nome_fantasia,
                         documento=doc_limpo,
@@ -69,13 +76,19 @@ class Agent2:
                     )
                     s.add(pessoa)
                     s.flush()
+                elif inativo:
+                    # Cadastro não pode ser excluído, apenas inativado/reativado
+                    pessoa.status = "ativo"
+                    reativado = True
 
             return {
                 "pessoa": pessoa,
                 "ja_existia": ja_existia,
+                "inativo": inativo,
+                "reativado": reativado,
                 "status_banco": status_banco,
                 "razao_social": razao_limpa,
-                "documento": doc_limpo
+                "documento": documento or ""
             }
         finally:
             if should_close:
@@ -84,7 +97,7 @@ class Agent2:
     def verificar_classificacao_banco(
         self,
         descricao_cat: str,
-        tipo: str = "DESPESA",
+        tipo: str = "Despesa",
         session: Optional[Session] = None,
         criar_se_nao_existir: bool = True
     ) -> Dict[str, Any]:
@@ -95,29 +108,120 @@ class Agent2:
         should_close = session is None and self.db_session is None
 
         try:
-            nome_cat = (descricao_cat or "OUTRAS").strip()
-            cat = s.query(Classificacao).filter_by(descricao=nome_cat).first()
+            nome_cat = (descricao_cat or CATEGORIA_PADRAO).strip().upper()
+            cat = buscar_classificacao(s, nome_cat)
+            ja_existia = cat is not None
+            inativo = ja_existia and cat.status == "inativo"
+            status_banco = self._status_banco(cat.id_classificacao if cat else None, cat.status if cat else None)
+            reativado = False
 
-            if cat:
-                status_banco = f"EXISTE – ID: {cat.id_classificacao}"
-                ja_existia = True
-            else:
-                status_banco = "NÃO EXISTE"
-                ja_existia = False
-                if criar_se_nao_existir:
-                    cat = Classificacao(tipo=tipo, descricao=nome_cat, status="ativo")
+            if criar_se_nao_existir:
+                if not cat:
+                    cat = Classificacao(tipo=normalizar_tipo_classificacao(tipo), descricao=nome_cat, status="ativo")
                     s.add(cat)
                     s.flush()
+                elif inativo:
+                    cat.status = "ativo"
+                    reativado = True
 
             return {
                 "classificacao": cat,
                 "ja_existia": ja_existia,
+                "inativo": inativo,
+                "reativado": reativado,
                 "status_banco": status_banco,
                 "descricao": nome_cat
             }
         finally:
             if should_close:
                 s.close()
+
+    def _analisar_nota_fiscal(self, dados_json: Dict[str, Any], session: Session, gravar: bool) -> Dict[str, Any]:
+        """
+        Executa as consultas da 2ª Etapa (FORNECEDOR, FATURADO, DESPESA e duplicidade da NF).
+        Com gravar=True também cria/reativa os cadastros necessários.
+        """
+        forn_data = dados_json.get("fornecedor") or {}
+        res_forn = self.verificar_pessoa_banco(
+            razao_social=forn_data.get("razaoSocial") or forn_data.get("nome") or "FORNECEDOR",
+            documento=forn_data.get("cnpj"),
+            nome_fantasia=forn_data.get("fantasia"),
+            tipo="CLIENTE-FORNECEDOR",
+            session=session,
+            criar_se_nao_existir=gravar
+        )
+
+        fat_data = dados_json.get("faturado") or {}
+        res_fat = self.verificar_pessoa_banco(
+            razao_social=fat_data.get("nomeCompleto") or fat_data.get("nome") or "FATURADO",
+            documento=fat_data.get("cpf"),
+            tipo="FATURADO",
+            session=session,
+            criar_se_nao_existir=gravar
+        )
+
+        # Um registro de contas a pagar pode ter uma ou mais classificações de despesa
+        classificacoes_lista = dados_json.get("classificacaoDespesa") or [{"categoria": CATEGORIA_PADRAO}]
+        res_despesas = []
+        vistos = set()
+        for c in classificacoes_lista:
+            res = self.verificar_classificacao_banco(
+                descricao_cat=c.get("categoria"),
+                tipo="Despesa",
+                session=session,
+                criar_se_nao_existir=gravar
+            )
+            if res["descricao"] in vistos:
+                continue
+            vistos.add(res["descricao"])
+            res["justificativa"] = c.get("justificativa")
+            res_despesas.append(res)
+
+        duplicado = None
+        if res_forn["pessoa"] is not None:
+            duplicado = buscar_movimento_duplicado(
+                session, dados_json.get("numeroNotaFiscal"), "Despesa", res_forn["pessoa"].id_pessoa
+            )
+
+        return {"fornecedor": res_forn, "faturado": res_fat, "despesas": res_despesas, "duplicado": duplicado}
+
+    @staticmethod
+    def _montar_resposta_consulta(analise: Dict[str, Any], dados_json: Dict[str, Any]) -> Dict[str, Any]:
+        """Monta o quadro exibido na tela (formato do exemplo da página 2 do documento)."""
+        forn, fat, duplicado = analise["fornecedor"], analise["faturado"], analise["duplicado"]
+        despesas = [
+            {
+                "descricao": d["descricao"],
+                "status_banco": d["status_banco"],
+                "existe": d["ja_existia"],
+                "inativo": d["inativo"]
+            }
+            for d in analise["despesas"]
+        ]
+        return {
+            "fornecedor": {
+                "nome": forn["razao_social"],
+                "cnpj": forn["documento"],
+                "status_banco": forn["status_banco"],
+                "existe": forn["ja_existia"],
+                "inativo": forn["inativo"]
+            },
+            "faturado": {
+                "nome": fat["razao_social"],
+                "cpf": fat["documento"],
+                "status_banco": fat["status_banco"],
+                "existe": fat["ja_existia"],
+                "inativo": fat["inativo"]
+            },
+            # 'despesa' mantém compatibilidade com a primeira classificação; 'despesas' traz todas
+            "despesa": despesas[0] if despesas else None,
+            "despesas": despesas,
+            "nota_fiscal": {
+                "numero": dados_json.get("numeroNotaFiscal"),
+                "duplicada": duplicado is not None,
+                "id_movimento_existente": duplicado.id_movimento_contas if duplicado else None
+            }
+        }
 
     def consultar_dados_nota_fiscal(self, dados_json: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -127,55 +231,10 @@ class Agent2:
         session = self._get_session()
         should_close = self.db_session is None
         try:
-            forn_data = dados_json.get("fornecedor", {})
-            res_forn = self.verificar_pessoa_banco(
-                razao_social=forn_data.get("razaoSocial") or forn_data.get("nome") or "FORNECEDOR",
-                documento=forn_data.get("cnpj"),
-                nome_fantasia=forn_data.get("fantasia"),
-                tipo="CLIENTE-FORNECEDOR",
-                session=session,
-                criar_se_nao_existir=False
-            )
-
-            fat_data = dados_json.get("faturado", {})
-            res_fat = self.verificar_pessoa_banco(
-                razao_social=fat_data.get("nomeCompleto") or fat_data.get("nome") or "FATURADO",
-                documento=fat_data.get("cpf"),
-                tipo="FATURADO",
-                session=session,
-                criar_se_nao_existir=False
-            )
-
-            classificacoes_lista = dados_json.get("classificacaoDespesa", [])
-            primeira_cat = classificacoes_lista[0].get("categoria") if classificacoes_lista else "INSUMOS AGRÍCOLAS"
-            res_despesa = self.verificar_classificacao_banco(
-                descricao_cat=primeira_cat,
-                tipo="DESPESA",
-                session=session,
-                criar_se_nao_existir=False
-            )
-
+            analise = self._analisar_nota_fiscal(dados_json, session, gravar=False)
             return {
                 "status": "success",
-                "resposta_consulta": {
-                    "fornecedor": {
-                        "nome": res_forn["razao_social"],
-                        "cnpj": res_forn["documento"],
-                        "status_banco": res_forn["status_banco"],
-                        "existe": res_forn["ja_existia"]
-                    },
-                    "faturado": {
-                        "nome": res_fat["razao_social"],
-                        "cpf": res_fat["documento"],
-                        "status_banco": res_fat["status_banco"],
-                        "existe": res_fat["ja_existia"]
-                    },
-                    "despesa": {
-                        "descricao": res_despesa["descricao"],
-                        "status_banco": res_despesa["status_banco"],
-                        "existe": res_despesa["ja_existia"]
-                    }
-                }
+                "resposta_consulta": self._montar_resposta_consulta(analise, dados_json)
             }
         finally:
             if should_close:
@@ -188,63 +247,41 @@ class Agent2:
         2. FATURADO: Consulta no Banco e informa se existe ou não.
         3. DESPESA: Consulta no Banco e informa se a classificação existe ou não.
         4. Cria novo fornecedor/faturado/despesa (se for o caso) e salva o movimento e parcelas.
+        Tudo em uma única transação: se algo falhar, nada é gravado.
         """
         session = self._get_session()
         should_close = self.db_session is None
         try:
-            # 1. Consulta e Cadastro de FORNECEDOR
-            forn_data = dados_json.get("fornecedor", {})
-            res_forn = self.verificar_pessoa_banco(
-                razao_social=forn_data.get("razaoSocial") or forn_data.get("nome") or "FORNECEDOR",
-                documento=forn_data.get("cnpj"),
-                nome_fantasia=forn_data.get("fantasia"),
-                tipo="CLIENTE-FORNECEDOR",
-                session=session
-            )
+            analise = self._analisar_nota_fiscal(dados_json, session, gravar=True)
+            resposta_consulta = self._montar_resposta_consulta(analise, dados_json)
 
-            # 2. Consulta e Cadastro de FATURADO
-            fat_data = dados_json.get("faturado", {})
-            res_fat = self.verificar_pessoa_banco(
-                razao_social=fat_data.get("nomeCompleto") or fat_data.get("nome") or "FATURADO",
-                documento=fat_data.get("cpf"),
-                tipo="FATURADO",
-                session=session
-            )
-
-            # 3. Consulta e Cadastro de DESPESA (Classificação)
-            classificacoes_lista = dados_json.get("classificacaoDespesa", [])
-            primeira_cat = classificacoes_lista[0].get("categoria") if classificacoes_lista else "INSUMOS AGRÍCOLAS"
-            res_despesa = self.verificar_classificacao_banco(
-                descricao_cat=primeira_cat,
-                tipo="DESPESA",
-                session=session
-            )
-
-            # 4. Executa a gravação do movimento e parcelas
-            movimento = salvar_nota_fiscal(dados_json, session=session)
-
-            # Monta o relatório de consulta idêntico ao exigido pela UniRV (Página 2)
-            resposta_consulta = {
-                "fornecedor": {
-                    "nome": res_forn["razao_social"],
-                    "cnpj": res_forn["documento"],
-                    "status_banco": res_forn["status_banco"]
-                },
-                "faturado": {
-                    "nome": res_fat["razao_social"],
-                    "cpf": res_fat["documento"],
-                    "status_banco": res_fat["status_banco"]
-                },
-                "despesa": {
-                    "descricao": res_despesa["descricao"],
-                    "status_banco": res_despesa["status_banco"]
+            if analise["duplicado"] is not None:
+                session.rollback()
+                return {
+                    "status": "error",
+                    "message": f"{mensagem_duplicidade(analise['duplicado'])} Nenhum registro foi gravado.",
+                    "resposta_consulta": resposta_consulta
                 }
-            }
+
+            movimento = salvar_nota_fiscal(
+                dados_json,
+                emitente=analise["fornecedor"]["pessoa"],
+                destinatario=analise["faturado"]["pessoa"],
+                classificacoes=[(d["classificacao"], d.get("justificativa")) for d in analise["despesas"]],
+                db=session
+            )
+            session.commit()
+            session.refresh(movimento)
+
+            reativados = [
+                r["razao_social"] for r in (analise["fornecedor"], analise["faturado"]) if r["reativado"]
+            ] + [d["descricao"] for d in analise["despesas"] if d["reativado"]]
 
             return {
                 "status": "success",
                 "message": "Registro de Movimento e suas Parcelas lançados com SUCESSO!",
                 "id_movimento_contas": movimento.id_movimento_contas,
+                "reativados": reativados,
                 "resposta_consulta": resposta_consulta,
                 "dados": movimento.to_dict()
             }
@@ -258,29 +295,69 @@ class Agent2:
             if should_close:
                 session.close()
 
+    @staticmethod
+    def _validar_documentos_manuais(dados: Dict[str, Any]) -> Optional[str]:
+        """Valida CPF/CNPJ digitados no formulário de lançamento manual."""
+        return (
+            validar_documento(dados.get("emitente_documento"), "Documento do emitente")
+            or validar_documento(dados.get("destinatario_documento"), "Documento do faturado")
+        )
+
+    def _resolver_classificacoes_manuais(self, dados: Dict[str, Any], tipo_op: str, session: Session) -> List[Classificacao]:
+        """Aceita 'categorias' (lista de descrições) ou 'categoria' (texto único, compatibilidade)."""
+        categorias = dados.get("categorias")
+        if not categorias:
+            categorias = [dados.get("categoria")] if dados.get("categoria") else []
+        resultado = []
+        for cat in categorias:
+            res = self.verificar_classificacao_banco(cat, tipo=tipo_op, session=session)
+            if res["classificacao"] not in resultado:
+                resultado.append(res["classificacao"])
+        return resultado
+
     def criar_movimento_manual(self, dados: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Cria movimento manual (Regra g: No CREATE campo STATUS oculto == ATIVO).
+        Cria movimento manual de Contas a Pagar (Despesa) ou a Receber (Receita).
+        Regra g: No CREATE campo STATUS oculto == ATIVO.
         """
         session = self._get_session()
         should_close = self.db_session is None
         try:
+            tipo_op = normalizar_tipo_classificacao(dados.get("tipo"))
+
+            valor_total = float(dados.get("valor_total") or 0.0)
+            if valor_total <= 0:
+                return {"status": "error", "message": "O valor total deve ser maior que zero."}
+
+            erro_doc = self._validar_documentos_manuais(dados)
+            if erro_doc:
+                return {"status": "error", "message": erro_doc}
+
+            classificacoes = self._resolver_classificacoes_manuais(dados, tipo_op, session)
+            if not classificacoes:
+                session.rollback()
+                return {"status": "error", "message": f"Informe ao menos um Tipo de {tipo_op}."}
+
             res_emit = self.verificar_pessoa_banco(
-                dados.get("emitente_nome", "Emitente Geral"),
-                dados.get("emitente_documento", ""),
-                tipo="CLIENTE-FORNECEDOR",
+                dados.get("emitente_nome") or "Emitente Geral",
+                dados.get("emitente_documento"),
+                tipo="CLIENTE-FORNECEDOR" if tipo_op == "Despesa" else "CLIENTE",
                 session=session
             )
 
             res_dest = self.verificar_pessoa_banco(
-                dados.get("destinatario_nome", "Destinatário Geral"),
-                dados.get("destinatario_documento", ""),
+                dados.get("destinatario_nome") or "Destinatário Geral",
+                dados.get("destinatario_documento"),
                 tipo="FATURADO",
                 session=session
             )
 
-            valor_total = float(dados.get("valor_total") or 0.0)
-            tipo_op = dados.get("tipo", "Despesa")
+            duplicado = buscar_movimento_duplicado(
+                session, dados.get("numero_nota_fiscal"), tipo_op, res_emit["pessoa"].id_pessoa
+            )
+            if duplicado:
+                session.rollback()
+                return {"status": "error", "message": mensagem_duplicidade(duplicado)}
 
             movimento = MovimentoContas(
                 tipo=tipo_op,
@@ -295,36 +372,29 @@ class Agent2:
             session.add(movimento)
             session.flush()
 
-            # Gera parcelas com identificação única e vencimento mensal em dia útil
-            qtd_parcelas = int(dados.get("quantidade_parcelas") or 1)
-            val_parcela = round(valor_total / max(qtd_parcelas, 1), 2)
+            # Gera parcelas com vencimento mensal em dia útil; a última absorve a diferença de centavos
+            qtd_parcelas = max(int(dados.get("quantidade_parcelas") or 1), 1)
+            val_parcela = round(valor_total / qtd_parcelas, 2)
             data_base_venc = parse_data(dados.get("data_vencimento")) or parse_data(dados.get("data_emissao")) or datetime.now().date()
 
             for i in range(1, qtd_parcelas + 1):
-                dt_venc = calcular_vencimento_parcela(data_base_venc, i)
-                p = Parcela(
+                valor_i = val_parcela if i < qtd_parcelas else round(valor_total - val_parcela * (qtd_parcelas - 1), 2)
+                session.add(Parcela(
                     id_movimento_contas=movimento.id_movimento_contas,
-                    identificacao=f"PARCELA_{movimento.id_movimento_contas}_{i}_{qtd_parcelas}",
-                    data_vencimento=dt_venc,
-                    valor_parcela=val_parcela,
+                    identificacao=identificacao_parcela(i, qtd_parcelas),
+                    data_vencimento=calcular_vencimento_parcela(data_base_venc, i),
+                    valor_parcela=valor_i,
                     valor_pago=0.0,
-                    valor_saldo=val_parcela,
+                    valor_saldo=valor_i,
                     status="aberta"
-                )
-                session.add(p)
+                ))
 
-            cat_res = self.verificar_classificacao_banco(
-                dados.get("categoria", "OUTRAS"),
-                tipo="DESPESA" if tipo_op == "Despesa" else "RECEITA",
-                session=session
-            )
-
-            assoc = MovimentoHasClassificacao(
-                id_movimento_contas=movimento.id_movimento_contas,
-                id_classificacao=cat_res["classificacao"].id_classificacao,
-                justificativa=dados.get("justificativa", "Lançamento manual")
-            )
-            session.add(assoc)
+            for cat in classificacoes:
+                session.add(MovimentoHasClassificacao(
+                    id_movimento_contas=movimento.id_movimento_contas,
+                    id_classificacao=cat.id_classificacao,
+                    justificativa=dados.get("justificativa", "Lançamento manual")
+                ))
 
             session.commit()
             session.refresh(movimento)
@@ -351,6 +421,10 @@ class Agent2:
             if not movimento:
                 return {"status": "error", "message": "Registro não encontrado."}
 
+            erro_doc = self._validar_documentos_manuais(dados)
+            if erro_doc:
+                return {"status": "error", "message": erro_doc}
+
             if "numero_nota_fiscal" in dados:
                 movimento.numero_nota_fiscal = dados["numero_nota_fiscal"]
             if "data_emissao" in dados:
@@ -361,6 +435,44 @@ class Agent2:
                 movimento.descricao_produtos = dados["descricao_produtos"]
             if "tipo" in dados and dados["tipo"] in ("Despesa", "Receita"):
                 movimento.tipo = dados["tipo"]
+
+            if dados.get("emitente_nome"):
+                res_emit = self.verificar_pessoa_banco(
+                    dados["emitente_nome"], dados.get("emitente_documento"),
+                    tipo="CLIENTE-FORNECEDOR" if movimento.tipo == "Despesa" else "CLIENTE",
+                    session=session
+                )
+                movimento.id_pessoa_emitente = res_emit["pessoa"].id_pessoa
+            if dados.get("destinatario_nome"):
+                res_dest = self.verificar_pessoa_banco(
+                    dados["destinatario_nome"], dados.get("destinatario_documento"),
+                    tipo="FATURADO", session=session
+                )
+                movimento.id_pessoa_destinatario = res_dest["pessoa"].id_pessoa
+
+            duplicado = buscar_movimento_duplicado(
+                session, movimento.numero_nota_fiscal, movimento.tipo, movimento.id_pessoa_emitente,
+                ignorar_id=movimento.id_movimento_contas
+            )
+            if duplicado:
+                session.rollback()
+                return {"status": "error", "message": mensagem_duplicidade(duplicado)}
+
+            if "categorias" in dados or "categoria" in dados:
+                classificacoes = self._resolver_classificacoes_manuais(dados, movimento.tipo, session)
+                if not classificacoes:
+                    session.rollback()
+                    return {"status": "error", "message": f"Informe ao menos um Tipo de {movimento.tipo}."}
+                ids_novos = {c.id_classificacao for c in classificacoes}
+                for assoc in list(movimento.classificacoes_associadas):
+                    if assoc.id_classificacao not in ids_novos:
+                        movimento.classificacoes_associadas.remove(assoc)
+                ids_atuais = {a.id_classificacao for a in movimento.classificacoes_associadas}
+                for cat in classificacoes:
+                    if cat.id_classificacao not in ids_atuais:
+                        movimento.classificacoes_associadas.append(MovimentoHasClassificacao(
+                            id_classificacao=cat.id_classificacao, justificativa="Lançamento manual"
+                        ))
 
             # Regra h: No UPDATE campo STATUS oculto e inalterado
 
@@ -381,6 +493,7 @@ class Agent2:
     def alterar_status_movimento(self, id_movimento_contas: int, novo_status: str) -> Dict[str, Any]:
         """
         Regra i: No DELETE altera campo STATUS == INATIVO (Exclusão Lógica).
+        Também permite REATIVAR (status == ATIVO) um registro inativo.
         """
         if novo_status not in ("ativo", "inativo"):
             return {"status": "error", "message": "Status deve ser 'ativo' ou 'inativo'."}
@@ -391,6 +504,14 @@ class Agent2:
             movimento = session.query(MovimentoContas).filter_by(id_movimento_contas=id_movimento_contas).first()
             if not movimento:
                 return {"status": "error", "message": "Registro não encontrado."}
+
+            if novo_status == "ativo":
+                duplicado = buscar_movimento_duplicado(
+                    session, movimento.numero_nota_fiscal, movimento.tipo, movimento.id_pessoa_emitente,
+                    ignorar_id=movimento.id_movimento_contas
+                )
+                if duplicado:
+                    return {"status": "error", "message": f"Não é possível reativar. {mensagem_duplicidade(duplicado)}"}
 
             movimento.status = novo_status
             session.commit()
@@ -433,7 +554,7 @@ class Agent2:
         Busca dados conforme recomendações UniRV:
         b. Carregar dados através da Busca ou TODOS
         c. TODOS carrega status == ATIVO
-        e. Busca por mais de um elemento
+        e. Busca por mais de um elemento (cada palavra deve casar com algum campo)
         """
         session = self._get_session()
         should_close = self.db_session is None
@@ -454,20 +575,20 @@ class Agent2:
             if d_fim:
                 query = query.filter(MovimentoContas.data_emissao <= d_fim)
 
-            if termo and termo.strip():
-                t = f"%{termo.strip()}%"
-                query = query.join(Pessoa, or_(
-                    MovimentoContas.id_pessoa_emitente == Pessoa.id_pessoa,
-                    MovimentoContas.id_pessoa_destinatario == Pessoa.id_pessoa
-                )).filter(
-                    or_(
-                        MovimentoContas.numero_nota_fiscal.ilike(t),
-                        MovimentoContas.descricao_produtos.ilike(t),
-                        Pessoa.razao_social.ilike(t),
-                        Pessoa.nome_fantasia.ilike(t),
-                        Pessoa.documento.ilike(t)
-                    )
-                ).distinct()
+            emit = aliased(Pessoa)
+            dest = aliased(Pessoa)
+            filtro = filtro_multitermos(termo, [
+                MovimentoContas.numero_nota_fiscal,
+                MovimentoContas.descricao_produtos,
+                emit.razao_social, emit.nome_fantasia, emit.documento,
+                dest.razao_social, dest.nome_fantasia, dest.documento,
+            ])
+            if filtro is not None:
+                query = (
+                    query.join(emit, MovimentoContas.id_pessoa_emitente == emit.id_pessoa)
+                    .join(dest, MovimentoContas.id_pessoa_destinatario == dest.id_pessoa)
+                    .filter(filtro)
+                )
 
             movimentos = query.order_by(MovimentoContas.id_movimento_contas.desc()).all()
             return [m.to_dict() for m in movimentos]
@@ -476,15 +597,20 @@ class Agent2:
                 session.close()
 
     def obter_resumo_financeiro(self) -> Dict[str, Any]:
-        """Retorna totais estatísticos."""
+        """Retorna totais estatísticos (apenas movimentos ativos)."""
         session = self._get_session()
         should_close = self.db_session is None
         try:
             movs = session.query(MovimentoContas).filter_by(status="ativo").all()
-            total_despesas = sum(float(m.valor_total) for m in movs if m.tipo == "Despesa")
-            total_receitas = sum(float(m.valor_total) for m in movs if m.tipo == "Receita")
-            parcelas_abertas = session.query(Parcela).filter_by(status="aberta").all()
-            saldo_pendente = sum(float(p.valor_saldo) for p in parcelas_abertas)
+            total_despesas = sum(float(m.valor_total or 0) for m in movs if m.tipo == "Despesa")
+            total_receitas = sum(float(m.valor_total or 0) for m in movs if m.tipo == "Receita")
+            parcelas_abertas = (
+                session.query(Parcela)
+                .join(MovimentoContas, Parcela.id_movimento_contas == MovimentoContas.id_movimento_contas)
+                .filter(Parcela.status == "aberta", MovimentoContas.status == "ativo")
+                .all()
+            )
+            saldo_pendente = sum(float(p.valor_saldo or 0) for p in parcelas_abertas)
 
             return {
                 "total_registros_ativos": len(movs),
@@ -530,7 +656,7 @@ class Agent2:
             session.refresh(parcela)
             return {
                 "status": "success",
-                "message": f"Pagamento de R$ {val_a_pagar:.2f} registrado com sucesso para a {parcela.identificacao}!",
+                "message": f"Pagamento de R$ {val_a_pagar:.2f} registrado com sucesso para a parcela {parcela.identificacao}!",
                 "parcela": parcela.to_dict()
             }
         except Exception as e:
@@ -539,4 +665,3 @@ class Agent2:
         finally:
             if should_close:
                 session.close()
-
