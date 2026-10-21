@@ -1,9 +1,10 @@
+import re
 import calendar
 from datetime import datetime, date, timedelta
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional, Tuple
+from sqlalchemy import func, or_, and_
 from sqlalchemy.orm import Session
 from models import Pessoa, MovimentoContas, Parcela, Classificacao, MovimentoHasClassificacao
-from database import SessionLocal
 
 def parse_data(data_str: Optional[str]):
     """Converte string de data (YYYY-MM-DD ou DD/MM/YYYY) em objeto date."""
@@ -62,148 +63,188 @@ def calcular_vencimento_parcela(data_base: Optional[date], indice_parcela: int =
     dt_alvo = date(ano, mes, dia)
     return ajustar_dia_util(dt_alvo)
 
-def salvar_nota_fiscal(dados_json: Dict[str, Any], session: Optional[Session] = None) -> MovimentoContas:
+
+
+# =====================================================================
+# Normalização de dados (evita duplicidade por diferença de máscara/caixa)
+# =====================================================================
+
+def normalizar_documento(documento: Optional[str]) -> str:
+    """Remove máscara de CPF/CNPJ, mantendo apenas os dígitos."""
+    return re.sub(r"\D", "", documento or "")
+
+def normalizar_numero_nf(numero: Optional[str]) -> str:
+    """Normaliza o número da NF para comparação (000.084.682 == 84682)."""
+    return normalizar_documento(numero).lstrip("0")
+
+def normalizar_tipo_classificacao(tipo: Optional[str]) -> str:
+    """Padroniza o tipo da classificação para 'Despesa' ou 'Receita'."""
+    return "Receita" if (tipo or "").strip().upper() == "RECEITA" else "Despesa"
+
+def identificacao_parcela(indice: int, total: int) -> str:
+    """Parcela única recebe 'ÚNICA'; demais seguem o padrão '1/3', '2/3'..."""
+    return "ÚNICA" if total <= 1 else f"{indice}/{total}"
+
+def sem_mascara(coluna):
+    """Expressão SQL que remove '.', '/', '-' e espaços de uma coluna (SQLite e PostgreSQL)."""
+    expr = coluna
+    for ch in (".", "/", "-", " "):
+        expr = func.replace(expr, ch, "")
+    return expr
+
+def filtro_multitermos(termo: Optional[str], colunas: list):
     """
-    Recebe os dados JSON extraídos pelo Agent1 e os persiste no Banco de Dados Relacional
-    respeitando todas as regras de negócio (Pessoas, MovimentoContas, Parcelas, Classificação).
+    Busca por mais de um elemento: cada palavra digitada deve aparecer em
+    pelo menos uma das colunas (ex.: 'iguaçu 84682' ou 'beltrano 999').
     """
-    db = session or SessionLocal()
-    should_close = session is None
+    if not termo or not termo.strip():
+        return None
+    condicoes = []
+    for palavra in termo.split():
+        like = f"%{palavra}%"
+        alternativas = [c.ilike(like) for c in colunas]
+        digitos = normalizar_documento(palavra)
+        if digitos and digitos != palavra:
+            alternativas += [sem_mascara(c).ilike(f"%{digitos}%") for c in colunas]
+        condicoes.append(or_(*alternativas))
+    return and_(*condicoes)
 
-    try:
-        # 1. Processa ou busca Pessoa Emitente (Fornecedor)
-        fornecedor_dados = dados_json.get("fornecedor", {})
-        doc_fornecedor = (fornecedor_dados.get("cnpj") or "").strip()
-        razao_fornecedor = (fornecedor_dados.get("razaoSocial") or "Fornecedor Não Identificado").strip()
-        fantasia_fornecedor = fornecedor_dados.get("fantasia")
 
-        emitente = None
-        if doc_fornecedor:
-            emitente = db.query(Pessoa).filter_by(documento=doc_fornecedor).first()
-        if not emitente:
-            emitente = db.query(Pessoa).filter_by(razao_social=razao_fornecedor).first()
-        
-        if not emitente:
-            emitente = Pessoa(
-                tipo="CLIENTE-FORNECEDOR",
-                razao_social=razao_fornecedor,
-                nome_fantasia=fantasia_fornecedor,
-                documento=doc_fornecedor,
-                status="ativo"
-            )
-            db.add(emitente)
-            db.flush()
+# =====================================================================
+# Consultas de existência no banco
+# =====================================================================
 
-        # 2. Processa ou busca Pessoa Destinatário (Faturado)
-        faturado_dados = dados_json.get("faturado", {})
-        doc_faturado = (faturado_dados.get("cpf") or "").strip()
-        nome_faturado = (faturado_dados.get("nomeCompleto") or "Destinatário Não Identificado").strip()
+def buscar_pessoa(db: Session, documento: Optional[str], razao_social: Optional[str]) -> Optional[Pessoa]:
+    """Procura a pessoa pelo CPF/CNPJ (ignorando máscara) e, na falta dele, pela razão social."""
+    doc = normalizar_documento(documento)
+    if doc:
+        pessoa = db.query(Pessoa).filter(sem_mascara(Pessoa.documento) == doc).first()
+        if pessoa:
+            return pessoa
+    nome = (razao_social or "").strip()
+    if nome:
+        return db.query(Pessoa).filter(func.upper(Pessoa.razao_social) == nome.upper()).first()
+    return None
 
-        destinatario = None
-        if doc_faturado:
-            destinatario = db.query(Pessoa).filter_by(documento=doc_faturado).first()
-        if not destinatario:
-            destinatario = db.query(Pessoa).filter_by(razao_social=nome_faturado).first()
+def buscar_classificacao(db: Session, descricao: Optional[str]) -> Optional[Classificacao]:
+    """Procura a classificação pela descrição, sem diferenciar maiúsculas/minúsculas."""
+    nome = (descricao or "").strip()
+    if not nome:
+        return None
+    return db.query(Classificacao).filter(func.upper(Classificacao.descricao) == nome.upper()).first()
 
-        if not destinatario:
-            destinatario = Pessoa(
-                tipo="FATURADO",
-                razao_social=nome_faturado,
-                nome_fantasia=None,
-                documento=doc_faturado,
-                status="ativo"
-            )
-            db.add(destinatario)
-            db.flush()
+def buscar_movimento_duplicado(
+    db: Session, numero_nf: Optional[str], tipo: Optional[str], id_emitente: Optional[int],
+    ignorar_id: Optional[int] = None
+) -> Optional[MovimentoContas]:
+    """
+    Retorna um movimento ATIVO que conflita com o número de NF informado:
+    - Contas a Pagar (Despesa): mesma NF do mesmo fornecedor (a numeração é de cada emitente).
+    - Contas a Receber (Receita): mesma NF em qualquer receita (a numeração é da própria fazenda).
+    """
+    numero = normalizar_numero_nf(numero_nf)
+    tipo = normalizar_tipo_classificacao(tipo)
+    if not numero or (tipo == "Despesa" and not id_emitente):
+        return None
+    candidatos = db.query(MovimentoContas).filter(
+        MovimentoContas.tipo == tipo,
+        MovimentoContas.status == "ativo",
+    )
+    if tipo == "Despesa":
+        candidatos = candidatos.filter(MovimentoContas.id_pessoa_emitente == id_emitente)
+    if ignorar_id:
+        candidatos = candidatos.filter(MovimentoContas.id_movimento_contas != ignorar_id)
+    for mov in candidatos.all():
+        if normalizar_numero_nf(mov.numero_nota_fiscal) == numero:
+            return mov
+    return None
 
-        # 3. Prepara a descrição concatenada dos produtos (Regra de Negócio: Sem Entidade de Produtos)
-        produtos_lista = dados_json.get("descricaoProdutos", [])
-        descricao_produtos = "\n".join(produtos_lista) if isinstance(produtos_lista, list) else str(produtos_lista)
 
-        # 4. Cria o MovimentoContas
-        data_emissao = parse_data(dados_json.get("dataEmissao"))
-        movimento = MovimentoContas(
-            tipo="Despesa",
-            numero_nota_fiscal=dados_json.get("numeroNotaFiscal"),
-            data_emissao=data_emissao,
-            descricao_produtos=descricao_produtos,
-            valor_total=float(dados_json.get("valorTotal") or 0.0),
-            status="ativo",
-            id_pessoa_emitente=emitente.id_pessoa,
-            id_pessoa_destinatario=destinatario.id_pessoa
-        )
-        db.add(movimento)
-        db.flush()
+def mensagem_duplicidade(duplicado: MovimentoContas) -> str:
+    """Texto padrão exibido quando a NF já está lançada."""
+    if duplicado.tipo == "Receita":
+        return f"A NF {duplicado.numero_nota_fiscal} já está lançada em Contas a Receber (lançamento #{duplicado.id_movimento_contas})."
+    return f"A NF {duplicado.numero_nota_fiscal} deste fornecedor já está lançada em Contas a Pagar (lançamento #{duplicado.id_movimento_contas})."
 
-        # 5. Processa as Parcelas
-        parcelas_lista = dados_json.get("parcelas", [])
-        data_base_venc = parse_data(dados_json.get("dataVencimento")) or data_emissao or date.today()
 
-        if not parcelas_lista:
-            # Cria parcela única se a lista estiver vazia
-            data_venc = calcular_vencimento_parcela(data_base_venc, 1)
-            val = float(dados_json.get("valorTotal") or 0.0)
-            p = Parcela(
-                id_movimento_contas=movimento.id_movimento_contas,
-                identificacao="Parcela 1",
-                data_vencimento=data_venc,
-                valor_parcela=val,
-                valor_pago=0.0,
-                valor_saldo=val,
-                status="aberta"
-            )
-            db.add(p)
+def validar_documento(documento: Optional[str], rotulo: str) -> Optional[str]:
+    """CPF/CNPJ é opcional, mas quando informado precisa ter 11 ou 14 dígitos."""
+    digitos = normalizar_documento(documento)
+    if digitos and len(digitos) not in (11, 14):
+        return f"{rotulo}: CPF deve ter 11 dígitos e CNPJ 14 dígitos (informado: {len(digitos)})."
+    return None
+
+
+# =====================================================================
+# Gravação do movimento extraído da Nota Fiscal
+# =====================================================================
+
+def salvar_nota_fiscal(
+    dados_json: Dict[str, Any],
+    emitente: Pessoa,
+    destinatario: Pessoa,
+    classificacoes: List[Tuple[Classificacao, Optional[str]]],
+    db: Session,
+) -> MovimentoContas:
+    """
+    Persiste o MovimentoContas (APAGAR), suas Parcelas e o vínculo N:M com as classificações.
+    Fornecedor, Faturado e Classificações já devem ter sido resolvidos (consultados/criados)
+    pelo Agent2. Não faz commit: o chamador controla a transação.
+    """
+    produtos_lista = dados_json.get("descricaoProdutos", [])
+    descricao_produtos = "\n".join(produtos_lista) if isinstance(produtos_lista, list) else str(produtos_lista or "")
+
+    data_emissao = parse_data(dados_json.get("dataEmissao"))
+    valor_total = float(dados_json.get("valorTotal") or 0.0)
+    movimento = MovimentoContas(
+        tipo="Despesa",
+        numero_nota_fiscal=dados_json.get("numeroNotaFiscal"),
+        data_emissao=data_emissao,
+        descricao_produtos=descricao_produtos,
+        valor_total=valor_total,
+        status="ativo",
+        id_pessoa_emitente=emitente.id_pessoa,
+        id_pessoa_destinatario=destinatario.id_pessoa
+    )
+    db.add(movimento)
+    db.flush()
+
+    # Parcelas: usa as da fatura; se não houver, gera parcela única com o valor total
+    parcelas_lista = dados_json.get("parcelas") or [{"numeroParcela": 1, "valorParcela": valor_total}]
+    data_base_venc = parse_data(dados_json.get("dataVencimento")) or data_emissao or date.today()
+    total = len(parcelas_lista)
+
+    for idx, item_p in enumerate(parcelas_lista, start=1):
+        data_venc_raw = parse_data(item_p.get("dataVencimento"))
+        if data_venc_raw:
+            # Data explícita da fatura: ajusta para dia útil se cair em fds ou feriado
+            data_venc = ajustar_dia_util(data_venc_raw)
         else:
-            for idx, item_p in enumerate(parcelas_lista, start=1):
-                num_p = item_p.get("numeroParcela", idx)
-                data_venc_raw = parse_data(item_p.get("dataVencimento"))
-                if data_venc_raw:
-                    # Data explícita da fatura: ajusta para dia útil se cair em fds ou feriado
-                    data_venc = ajustar_dia_util(data_venc_raw)
-                else:
-                    # Calcula mensalmente no mesmo dia + dia útil
-                    data_venc = calcular_vencimento_parcela(data_base_venc, idx)
+            # Calcula mensalmente no mesmo dia + dia útil
+            data_venc = calcular_vencimento_parcela(data_base_venc, idx)
 
-                val_p = float(item_p.get("valorParcela") or 0.0)
-                p = Parcela(
-                    id_movimento_contas=movimento.id_movimento_contas,
-                    identificacao=f"Parcela {num_p}",
-                    data_vencimento=data_venc,
-                    valor_parcela=val_p,
-                    valor_pago=0.0,
-                    valor_saldo=val_p,
-                    status="aberta"
-                )
-                db.add(p)
+        val_p = float(item_p.get("valorParcela") or (valor_total if total == 1 else 0.0))
+        db.add(Parcela(
+            id_movimento_contas=movimento.id_movimento_contas,
+            identificacao=identificacao_parcela(item_p.get("numeroParcela") or idx, total),
+            data_vencimento=data_venc,
+            valor_parcela=val_p,
+            valor_pago=0.0,
+            valor_saldo=val_p,
+            status="aberta"
+        ))
 
-        # 6. Processa as Classificações de Despesa (Relacionamento N:M)
-        classificacoes_lista = dados_json.get("classificacaoDespesa", [])
-        for c in classificacoes_lista:
-            cat_nome = (c.get("categoria") or "OUTRAS").strip()
-            justificativa = c.get("justificativa")
+    # Classificações de Despesa (Relacionamento N:M), sem repetir a mesma categoria
+    ids_vinculados = set()
+    for cat_db, justificativa in classificacoes:
+        if cat_db.id_classificacao in ids_vinculados:
+            continue
+        ids_vinculados.add(cat_db.id_classificacao)
+        db.add(MovimentoHasClassificacao(
+            id_movimento_contas=movimento.id_movimento_contas,
+            id_classificacao=cat_db.id_classificacao,
+            justificativa=justificativa
+        ))
 
-            # Busca ou cria a categoria na tabela classificacao
-            cat_db = db.query(Classificacao).filter_by(descricao=cat_nome).first()
-            if not cat_db:
-                cat_db = Classificacao(tipo="Despesa", descricao=cat_nome, status="ativo")
-                db.add(cat_db)
-                db.flush()
-
-            # Cria o vínculo N:M na tabela movimento_has_classificacao
-            assoc = MovimentoHasClassificacao(
-                id_movimento_contas=movimento.id_movimento_contas,
-                id_classificacao=cat_db.id_classificacao,
-                justificativa=justificativa
-            )
-            db.add(assoc)
-
-        db.commit()
-        db.refresh(movimento)
-        return movimento
-
-    except Exception as e:
-        db.rollback()
-        raise e
-    finally:
-        if should_close:
-            db.close()
+    db.flush()
+    return movimento
