@@ -3,12 +3,14 @@ import subprocess
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify, render_template
 
+load_dotenv()
+
 # Importação dos Agentes Inteligentes conforme arquitetura modular
 from agents.agent1 import Agent1
 from agents.agent2 import Agent2
-from database import init_db
-
-load_dotenv()
+from database import init_db, descrever_banco
+import servico_cadastros
+import servico_relatorios
 
 app = Flask(__name__)
 app.json.sort_keys = False
@@ -37,7 +39,8 @@ def get_deploy_info():
 
     return {
         "commit": commit_hash,
-        "env": "Produção (Render)" if os.environ.get("RENDER") else "Desenvolvimento Local"
+        "env": "Produção (Render)" if os.environ.get("RENDER") else "Desenvolvimento Local",
+        "banco": descrever_banco()
     }
 
 @app.route("/")
@@ -104,11 +107,16 @@ def confirmar_lancamento():
 
     try:
         resultado_persistencia = agent2.salvar_nota_fiscal(dados_json)
-        code = 200 if resultado_persistencia.get("status") == "success" else 400
+        if resultado_persistencia.get("status") != "success":
+            return jsonify({
+                "status": "error",
+                "message": resultado_persistencia.get("message"),
+                "persistencia": resultado_persistencia
+            }), 400
         return jsonify({
             "status": "success",
             "persistencia": resultado_persistencia
-        }), code
+        })
     except Exception as e:
         return jsonify({"status": "error", "message": f"Falha ao persistir lançamento: {str(e)}"}), 500
 
@@ -172,7 +180,10 @@ def alterar_status_movimento(id_movimento):
 @app.route("/api/resumo", methods=["GET"])
 def resumo_financeiro():
     """Resumo estatístico para os cards do painel."""
-    resumo = agent2.obter_resumo_financeiro()
+    try:
+        resumo = agent2.obter_resumo_financeiro()
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Falha ao calcular resumo: {str(e)}"}), 500
     return jsonify({"status": "success", "dados": resumo})
 
 @app.route("/api/parcelas/<int:id_parcela>/pagar", methods=["POST", "PATCH"])
@@ -183,6 +194,81 @@ def registrar_pagamento_parcela(id_parcela):
     resultado = agent2.registrar_pagamento_parcela(id_parcela, valor_pago=valor_pago)
     code = 200 if resultado.get("status") == "success" else 400
     return jsonify(resultado), code
+
+# =====================================================================
+# CADASTROS (MANTER): Pessoas e Classificações
+# Exclusão é sempre lógica (status 'inativo') e pode ser revertida (status 'ativo')
+# =====================================================================
+
+def _resposta(resultado, code_sucesso=200):
+    return jsonify(resultado), (code_sucesso if resultado.get("status") == "success" else 400)
+
+@app.route("/api/pessoas", methods=["GET"])
+def listar_pessoas():
+    """Lista pessoas. Parâmetros: termo, tipo (pode repetir ou separar por vírgula), status (ativo/inativo/todos)."""
+    tipos = [t for valor in request.args.getlist("tipo") for t in valor.split(",") if t]
+    dados = servico_cadastros.listar_pessoas(
+        termo=request.args.get("termo"),
+        tipos=tipos or None,
+        status=request.args.get("status", "ativo")
+    )
+    return jsonify({"status": "success", "total": len(dados), "dados": dados})
+
+@app.route("/api/pessoas", methods=["POST"])
+def criar_pessoa():
+    return _resposta(servico_cadastros.criar_pessoa(request.get_json() or {}), 201)
+
+@app.route("/api/pessoas/<int:id_pessoa>", methods=["PUT"])
+def editar_pessoa(id_pessoa):
+    return _resposta(servico_cadastros.editar_pessoa(id_pessoa, request.get_json() or {}))
+
+@app.route("/api/pessoas/<int:id_pessoa>/status", methods=["PATCH", "PUT"])
+def alterar_status_pessoa(id_pessoa):
+    return _resposta(servico_cadastros.alterar_status_pessoa(id_pessoa, (request.get_json() or {}).get("status")))
+
+@app.route("/api/classificacoes", methods=["GET"])
+def listar_classificacoes():
+    """Lista classificações. Parâmetros: termo, tipo (Despesa/Receita), status (ativo/inativo/todos)."""
+    dados = servico_cadastros.listar_classificacoes(
+        termo=request.args.get("termo"),
+        tipo=request.args.get("tipo"),
+        status=request.args.get("status", "ativo")
+    )
+    return jsonify({"status": "success", "total": len(dados), "dados": dados})
+
+@app.route("/api/classificacoes", methods=["POST"])
+def criar_classificacao():
+    return _resposta(servico_cadastros.criar_classificacao(request.get_json() or {}), 201)
+
+@app.route("/api/classificacoes/<int:id_classificacao>", methods=["PUT"])
+def editar_classificacao(id_classificacao):
+    return _resposta(servico_cadastros.editar_classificacao(id_classificacao, request.get_json() or {}))
+
+@app.route("/api/classificacoes/<int:id_classificacao>/status", methods=["PATCH", "PUT"])
+def alterar_status_classificacao(id_classificacao):
+    return _resposta(servico_cadastros.alterar_status_classificacao(id_classificacao, (request.get_json() or {}).get("status")))
+
+# =====================================================================
+# RELATÓRIOS: Contas a Pagar (despesa) e Contas a Receber (receita)
+# =====================================================================
+
+@app.route("/api/relatorios/<tipo>", methods=["GET"])
+def relatorio_contas(tipo):
+    """tipo: 'pagar' ou 'receber'. Filtros: data_inicio, data_fim, situacao (todas/abertas/vencidas/quitadas), natureza."""
+    tipos = {"pagar": "Despesa", "receber": "Receita"}
+    if tipo not in tipos:
+        return jsonify({"status": "error", "message": "Relatório deve ser 'pagar' ou 'receber'."}), 404
+    try:
+        dados = servico_relatorios.gerar_relatorio(
+            tipos[tipo],
+            data_inicio=request.args.get("data_inicio"),
+            data_fim=request.args.get("data_fim"),
+            situacao=request.args.get("situacao", "todas"),
+            natureza=request.args.get("natureza") or None,
+        )
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Falha ao gerar relatório: {str(e)}"}), 500
+    return jsonify({"status": "success", "dados": dados})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
