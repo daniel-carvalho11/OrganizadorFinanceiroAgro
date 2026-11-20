@@ -38,7 +38,7 @@ MODELOS_GERACAO = ["gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.5-flash-lit
 MODELO_EMBEDDING = "gemini-embedding-001"
 DIMENSAO_EMBEDDING = 768
 LIMITE_REGISTROS = 20   # RAG simples: limita o contexto para manter o desempenho
-TOP_K = 6               # RAG com embeddings: quantidade de lançamentos mais próximos
+TOP_K = 10              # RAG com embeddings: quantidade de lançamentos mais próximos
 LOTE_EMBEDDING = 50     # textos enviados por chamada à API de embeddings
 
 SYSTEM_INSTRUCTION = """Você é um assistente de gestão financeira de uma propriedade rural.
@@ -48,9 +48,18 @@ Regras:
 - Se os dados não forem suficientes para responder, diga isso claramente e explique o que falta.
 - Cite os lançamentos usados pelo número (ex.: Lançamento #12, NF 000.084.682).
 - Valores em reais (R$ 1.234,56) e datas no formato dd/mm/aaaa.
-- Ao somar ou comparar valores, mostre o cálculo de forma resumida.
-- Escreva uma resposta clara e organizada: um parágrafo curto e, se útil, uma lista com "- ".
-- Não use tabelas nem títulos."""
+- Use os subtotais e totais já calculados no contexto em vez de refazer as contas.
+- Considere só os lançamentos que respondem à pergunta; se somar apenas parte deles, mostre o cálculo resumido.
+
+Formato da resposta:
+1. Comece com uma frase curta respondendo diretamente à pergunta.
+2. Se houver compras relevantes, escreva a linha **Compras (Contas a Pagar)** e, abaixo, uma linha "- " por lançamento
+   (fornecedor, o que foi comprado, data, valor e situação das parcelas), terminando com "Subtotal de compras: R$ ...".
+3. Se houver vendas relevantes, escreva a linha **Vendas (Contas a Receber)** no mesmo formato
+   (cliente, o que foi vendido, data, valor e situação), terminando com "Subtotal de vendas: R$ ...".
+4. Termine com a linha **Total**: valor total de compras, de vendas e o saldo (vendas - compras), mostrando só o que se aplica.
+- Omita a seção que não tiver lançamentos relevantes para a pergunta.
+- Não use tabelas nem títulos com "#"."""
 
 
 def _moeda(valor) -> str:
@@ -303,15 +312,35 @@ class Agent3:
 
     def _montar_contexto(self, registros: List[Dict[str, Any]], modo: str, session: Session) -> str:
         if modo == "embeddings":
-            cabecalho = f"Lançamentos mais relacionados à pergunta (busca semântica, top {len(registros)}):"
-            blocos = [f"[similaridade {r['similaridade']:.3f}]\n{r['texto']}" for r in registros]
+            cabecalho = f"Lançamentos mais relacionados à pergunta (busca semântica, top {len(registros)})"
         else:
-            cabecalho = f"Lançamentos ativos mais recentes ({len(registros)} de no máximo {LIMITE_REGISTROS}):"
-            blocos = [r["texto"] for r in registros]
+            cabecalho = f"Lançamentos ativos mais recentes ({len(registros)} de no máximo {LIMITE_REGISTROS})"
+
+        # Compras e vendas em grupos separados, cada um com o subtotal já calculado
+        secoes = []
+        subtotais = {}
+        for tipo, titulo in (("Despesa", "COMPRAS (Despesas / Contas a Pagar)"), ("Receita", "VENDAS (Receitas / Contas a Receber)")):
+            grupo = [r for r in registros if r["movimento"].tipo == tipo]
+            if not grupo:
+                continue
+            subtotais[tipo] = sum(float(r["movimento"].valor_total or 0) for r in grupo)
+            blocos = [
+                (f"[similaridade {r['similaridade']:.3f}]\n" if "similaridade" in r else "") + r["texto"]
+                for r in grupo
+            ]
+            secoes.append(
+                f"=== {titulo}: {len(grupo)} lançamento(s), subtotal {_moeda(subtotais[tipo])} ===\n\n" + "\n\n".join(blocos)
+            )
+
+        compras, vendas = subtotais.get("Despesa", 0.0), subtotais.get("Receita", 0.0)
+        totais = (
+            f"Totais dos lançamentos acima: compras {_moeda(compras)} | vendas {_moeda(vendas)} | "
+            f"saldo (vendas - compras) {_moeda(vendas - compras)}"
+        )
         return (
             f"Data de hoje: {_data(date.today())}\n\n"
             f"Resumo geral do banco:\n{self._resumo_geral(session)}\n\n"
-            f"{cabecalho}\n\n" + "\n\n".join(blocos)
+            f"{cabecalho}:\n\n" + "\n\n".join(secoes) + f"\n\n{totais}"
         )
 
     # ------------------------------------------------------------------

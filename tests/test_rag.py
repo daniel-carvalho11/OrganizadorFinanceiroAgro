@@ -146,3 +146,17 @@ def test_tela_principal_tem_categoria_de_pesquisa_rag(client):
     html = res.get_data(as_text=True)
     assert res.status_code == 200
     assert 'name="categoriaPesquisa" value="embeddings"' in html and 'id="ragPainel"' in html
+
+
+def test_contexto_separa_compras_e_vendas_com_subtotais(client, gemini):
+    _lancar(client, "1", "Posto", "Diesel", valor=850)
+    _lancar(client, "2", "Loja", "Rolamento", valor=150)
+    _lancar(client, "3", "Cerealista", "Venda de soja", valor=5000, tipo="Receita")
+
+    Agent3(api_key="teste").run_query("Resumo de compras e vendas", "simples")
+    prompt = gemini.prompts[0]
+
+    compras = prompt.index("=== COMPRAS (Despesas / Contas a Pagar): 2 lançamento(s), subtotal R$ 1.000,00 ===")
+    vendas = prompt.index("=== VENDAS (Receitas / Contas a Receber): 1 lançamento(s), subtotal R$ 5.000,00 ===")
+    assert compras < prompt.index("Posto") < vendas < prompt.index("Cerealista")
+    assert "compras R$ 1.000,00 | vendas R$ 5.000,00 | saldo (vendas - compras) R$ 4.000,00" in prompt
