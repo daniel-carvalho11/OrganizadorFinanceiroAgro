@@ -6,3 +6,4 @@ venv/
 .agents/
 *.db
 .pytest_cache/
+documento entrega/

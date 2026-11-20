@@ -147,3 +147,19 @@ class MovimentoHasClassificacao(Base):
             "tipo": self.classificacao.tipo if self.classificacao else None,
             "justificativa": self.justificativa
         }
+
+
+class RagEmbedding(Base):
+    """Índice vetorial do RAG (Agent3): um embedding por lançamento (MovimentoContas).
+
+    O vetor fica guardado como JSON no próprio banco relacional (PostgreSQL ou SQLite),
+    funcionando como um banco vetorial simples. O hash do texto indica quando o
+    lançamento mudou e o embedding precisa ser recalculado.
+    """
+    __tablename__ = "rag_embeddings"
+
+    id_movimento_contas = Column(Integer, ForeignKey("movimento_contas.id_movimento_contas", ondelete="CASCADE"), primary_key=True)
+    texto = Column(Text, nullable=False)
+    hash_texto = Column(String(64), nullable=False)
+    modelo = Column(String(80), nullable=False)
+    vetor = Column(Text, nullable=False)  # lista de floats serializada em JSON

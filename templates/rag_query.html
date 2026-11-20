@@ -1,0 +1,180 @@
+<!-- ===================================================================== -->
+<!-- BUSCA INTELIGENTE (Agent3 - RAG) NA TELA PRINCIPAL                    -->
+<!-- Categoria de pesquisa "Pergunta com IA" no card Buscar Lançamentos:   -->
+<!-- pergunta -> /api/rag/consulta -> Agent3.run_query() -> Recupera dados -->
+<!-- -> Gemini gera a resposta -> resultado exibido neste painel           -->
+<!-- ===================================================================== -->
+<section id="ragPainel" class="hidden bg-white rounded-2xl shadow-sm border border-violet-200 overflow-hidden">
+    <div class="px-5 py-3 border-b border-slate-100 flex items-center justify-between gap-3">
+        <h3 class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+            <i class="fa-solid fa-wand-magic-sparkles text-violet-600"></i> Resposta da Busca Inteligente
+        </h3>
+        <button type="button" id="ragFechar" class="text-slate-400 hover:text-slate-600 text-xs px-2 py-1 rounded" title="Fechar resposta">
+            <i class="fa-solid fa-xmark"></i>
+        </button>
+    </div>
+
+    <!-- Etapas do RAG durante o processamento -->
+    <div id="ragCarregando" class="hidden px-5 py-4">
+        <ol class="flex flex-col sm:flex-row sm:items-center gap-3 text-xs">
+            <li data-etapa="0" class="rag-etapa flex items-center gap-2"><i class="fa-solid fa-database"></i> 1. Recuperando dados</li>
+            <li class="hidden sm:block text-slate-300"><i class="fa-solid fa-arrow-right"></i></li>
+            <li data-etapa="1" class="rag-etapa flex items-center gap-2"><i class="fa-solid fa-layer-group"></i> 2. Montando o prompt</li>
+            <li class="hidden sm:block text-slate-300"><i class="fa-solid fa-arrow-right"></i></li>
+            <li data-etapa="2" class="rag-etapa flex items-center gap-2"><i class="fa-solid fa-brain"></i> 3. Gerando a resposta</li>
+        </ol>
+    </div>
+
+    <!-- Erro da consulta (fica visível, não some como o aviso flutuante) -->
+    <div id="ragErro" class="hidden m-5 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex gap-2">
+        <i class="fa-solid fa-circle-exclamation mt-0.5"></i><span id="ragErroMsg"></span>
+    </div>
+
+    <div id="ragResultado" class="hidden">
+        <div class="px-5 py-4 space-y-3">
+            <div class="flex flex-wrap items-center gap-2 text-[11px]" id="ragMeta"></div>
+            <p class="text-xs text-slate-500"><strong class="text-slate-700">Pergunta:</strong> <span id="ragPerguntaEco"></span></p>
+            <div id="ragResposta" class="text-sm text-slate-800 leading-relaxed whitespace-pre-line"></div>
+        </div>
+        <div class="border-t border-slate-100">
+            <div class="px-5 py-2 flex items-center justify-between text-[11px] text-slate-500">
+                <span class="font-bold uppercase tracking-wider">Fontes consultadas</span>
+                <span id="ragQtdFontes"></span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-xs">
+                    <thead class="bg-slate-50 text-slate-500 uppercase text-[10px] tracking-wider">
+                        <tr>
+                            <th class="px-4 py-2 text-left">Lançamento</th>
+                            <th class="px-4 py-2 text-left">Tipo</th>
+                            <th class="px-4 py-2 text-left">NF</th>
+                            <th class="px-4 py-2 text-left">Emissão</th>
+                            <th class="px-4 py-2 text-left">Emitente</th>
+                            <th class="px-4 py-2 text-right">Valor</th>
+                            <th class="px-4 py-2 text-right" id="ragColSimilaridade">Similaridade</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ragFontes" class="divide-y divide-slate-100"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</section>
+
+<script>
+    (function () {
+        const CHAVE_LOCAL = 'gemini_api_key_agro'; // mesma chave usada na aba de extração
+        const PLACEHOLDER_FILTROS = 'Ex.: iguaçu 84682 (Razão Social, CPF/CNPJ, Nº NF...)';
+        const PLACEHOLDER_IA = 'Faça uma pergunta. Ex.: Quanto gastei com diesel e quais parcelas estão vencidas?';
+        const $ = (id) => document.getElementById(id);
+        const painel = $('ragPainel');
+        let temporizador = null;
+
+        const esc = (v) => String(v ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+        const moeda = (v) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0);
+        const dataBr = (iso) => iso ? iso.split('-').reverse().join('/') : '--';
+        const lerChave = () => { try { return localStorage.getItem(CHAVE_LOCAL) || ''; } catch (e) { return ''; } };
+        const salvarChave = (v) => { try { if (v) localStorage.setItem(CHAVE_LOCAL, v); } catch (e) { /* sem armazenamento */ } };
+
+        // Troca a categoria de pesquisa: filtros tradicionais x pergunta com IA
+        function aplicarCategoria() {
+            const categoria = document.querySelector('input[name="categoriaPesquisa"]:checked').value;
+            const ia = categoria !== 'filtros';
+            document.querySelectorAll('.so-filtros').forEach(el => el.classList.toggle('hidden', ia));
+            const wrapper = $('termoWrapper');
+            wrapper.classList.toggle('md:col-span-6', !ia);
+            wrapper.classList.toggle('md:col-span-10', ia);
+            $('termoInput').placeholder = ia ? PLACEHOLDER_IA : PLACEHOLDER_FILTROS;
+            $('btnBuscar').querySelector('span').textContent = ia ? 'Perguntar' : 'Buscar';
+            $('ragChaveLinha').classList.toggle('hidden', !ia);
+            $('ragChaveLinha').classList.toggle('flex', ia);
+            if (ia && !$('ragApiKey').value) $('ragApiKey').value = lerChave();
+            if (!ia) painel.classList.add('hidden');
+            $('termoInput').focus();
+        }
+
+        function marcarEtapa(indice) {
+            document.querySelectorAll('.rag-etapa').forEach(el => {
+                const n = Number(el.dataset.etapa);
+                el.className = 'rag-etapa flex items-center gap-2 ' + (n < indice ? 'text-emerald-600 font-semibold' : n === indice ? 'text-brand-600 font-bold animate-pulse' : 'text-slate-400');
+            });
+        }
+
+        // Texto do modelo: escapa HTML e mantém apenas **negrito** como formatação
+        const formatarResposta = (texto) => esc(texto).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+        function exibirResultado(dados) {
+            const embeddings = dados.modo === 'embeddings';
+            const etiqueta = (texto, cor) => `<span class="px-2 py-0.5 rounded-full font-semibold ${cor}">${esc(texto)}</span>`;
+            let meta = etiqueta(embeddings ? 'RAG com Embeddings' : 'RAG Simples', 'bg-violet-100 text-violet-700');
+            if (dados.modelo) meta += etiqueta(dados.modelo, 'bg-slate-100 text-slate-600');
+            if (dados.indice) {
+                meta += etiqueta(`Índice vetorial: ${dados.indice.total_indexados} lançamentos`, 'bg-emerald-50 text-emerald-700');
+                if (dados.indice.atualizados_agora) meta += etiqueta(`${dados.indice.atualizados_agora} vetorizados agora`, 'bg-amber-50 text-amber-700');
+            }
+            $('ragMeta').innerHTML = meta;
+            $('ragPerguntaEco').textContent = dados.pergunta;
+            $('ragResposta').innerHTML = formatarResposta(dados.resposta);
+
+            $('ragColSimilaridade').classList.toggle('hidden', !embeddings);
+            $('ragQtdFontes').textContent = `${dados.fontes.length} lançamento(s) enviados ao modelo`;
+            $('ragFontes').innerHTML = dados.fontes.length ? dados.fontes.map(f => `
+                <tr class="hover:bg-slate-50">
+                    <td class="px-4 py-2 font-mono font-semibold text-slate-700">#${esc(f.id_movimento_contas)}</td>
+                    <td class="px-4 py-2"><span class="${f.tipo === 'Despesa' ? 'text-rose-600' : 'text-emerald-600'} font-semibold">${esc(f.tipo)}</span></td>
+                    <td class="px-4 py-2 font-mono">${esc(f.numero_nota_fiscal || '--')}</td>
+                    <td class="px-4 py-2">${dataBr(f.data_emissao)}</td>
+                    <td class="px-4 py-2">${esc(f.emitente)}</td>
+                    <td class="px-4 py-2 text-right font-mono">${moeda(f.valor_total)}</td>
+                    <td class="px-4 py-2 text-right font-mono ${embeddings ? '' : 'hidden'}">${f.similaridade != null ? (f.similaridade * 100).toFixed(1) + '%' : '--'}</td>
+                </tr>`).join('') : '<tr><td colspan="7" class="px-4 py-6 text-center text-slate-400">Nenhum lançamento consultado.</td></tr>';
+            $('ragResultado').classList.remove('hidden');
+        }
+
+        function mostrarErro(msg) {
+            $('ragErroMsg').textContent = msg;
+            $('ragErro').classList.remove('hidden');
+        }
+
+        // Chamado pelo formulário "Buscar Lançamentos" quando a categoria é uma pergunta com IA
+        window.ragConsultar = async function (pergunta, modo) {
+            pergunta = (pergunta || '').trim();
+            painel.classList.remove('hidden');
+            $('ragResultado').classList.add('hidden');
+            $('ragErro').classList.add('hidden');
+            if (!pergunta) { mostrarErro('Digite uma pergunta no campo de pesquisa.'); return; }
+
+            const apiKey = $('ragApiKey').value.trim() || lerChave();
+            salvarChave(apiKey);
+
+            const btn = $('btnBuscar');
+            btn.disabled = true;
+            $('ragCarregando').classList.remove('hidden');
+            let etapa = 0;
+            marcarEtapa(etapa);
+            temporizador = setInterval(() => { if (etapa < 2) marcarEtapa(++etapa); }, 1200);
+
+            try {
+                const resp = await fetch('/api/rag/consulta', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pergunta, modo, api_key: apiKey })
+                });
+                let dados;
+                try { dados = await resp.json(); } catch (e) { throw new Error(`Erro ${resp.status} no servidor ao consultar o RAG.`); }
+                if (!resp.ok || dados.status !== 'success') throw new Error(dados.message || 'Falha na consulta.');
+                exibirResultado(dados);
+            } catch (err) {
+                console.error('Consulta RAG:', err);
+                mostrarErro(err.message === 'Failed to fetch' ? 'Não foi possível conectar ao servidor.' : err.message);
+            } finally {
+                clearInterval(temporizador);
+                $('ragCarregando').classList.add('hidden');
+                btn.disabled = false;
+            }
+        };
+
+        document.querySelectorAll('input[name="categoriaPesquisa"]').forEach(r => r.addEventListener('change', aplicarCategoria));
+        $('ragFechar').addEventListener('click', () => painel.classList.add('hidden'));
+    })();
+</script>

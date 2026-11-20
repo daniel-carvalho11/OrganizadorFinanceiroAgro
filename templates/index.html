@@ -69,6 +69,12 @@
             #relatorioTab section { box-shadow: none !important; break-inside: avoid; }
             #relatorioTab table { font-size: 10px; }
         }
+
+        /* Categoria de pesquisa (filtros ou pergunta com IA) */
+        .cat-pesquisa { display: inline-flex; align-items: center; gap: .4rem; padding: .4rem .8rem; border-radius: 9999px; border: 1px solid #e2e8f0; background: #f8fafc; color: #475569; cursor: pointer; font-weight: 600; transition: all .15s; }
+        .cat-pesquisa:hover { border-color: #93c5fd; }
+        .cat-pesquisa:has(input:checked) { background: #2563eb; border-color: #2563eb; color: #fff; }
+        .cat-pesquisa:has(input:focus-visible) { outline: 2px solid #3b82f6; outline-offset: 2px; }
     </style>
 </head>
 <body class="h-full bg-slate-50 text-slate-800 font-sans flex flex-col md:flex-row antialiased selection:bg-brand-500 selection:text-white">
@@ -264,14 +270,22 @@
                         </h3>
                     </div>
 
+                    <!-- Categoria de pesquisa: filtros tradicionais ou pergunta com IA (Agent3 - RAG) -->
+                    <div class="flex flex-wrap items-center gap-2 text-xs" role="radiogroup" aria-label="Categoria de pesquisa">
+                        <span class="font-bold text-slate-500 mr-1">Categoria de pesquisa:</span>
+                        <label class="cat-pesquisa"><input type="radio" name="categoriaPesquisa" value="filtros" checked class="sr-only"><i class="fa-solid fa-filter"></i> Filtros (nome, CPF/CNPJ, NF)</label>
+                        <label class="cat-pesquisa"><input type="radio" name="categoriaPesquisa" value="simples" class="sr-only"><i class="fa-solid fa-wand-magic-sparkles"></i> Pergunta com IA – RAG Simples</label>
+                        <label class="cat-pesquisa"><input type="radio" name="categoriaPesquisa" value="embeddings" class="sr-only"><i class="fa-solid fa-diagram-project"></i> Pergunta com IA – RAG Embeddings</label>
+                    </div>
+
                     <form id="searchForm" class="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
-                        <div class="md:col-span-6 relative">
+                        <div id="termoWrapper" class="md:col-span-6 relative">
                             <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
                             <input type="text" id="termoInput" placeholder="Ex.: iguaçu 84682 (Razão Social, CPF/CNPJ, Nº NF...)"
                                 class="w-full text-xs pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-brand-500 focus:outline-none transition-all placeholder:text-slate-400">
                         </div>
 
-                        <div class="md:col-span-2">
+                        <div class="md:col-span-2 so-filtros">
                             <select id="filtroTipo" class="w-full text-xs px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-brand-500 focus:outline-none transition-all text-slate-700">
                                 <option value="todos">Todos os Tipos</option>
                                 <option value="Despesa">Despesa (Contas a Pagar)</option>
@@ -290,7 +304,7 @@
                         </div>
 
                         <!-- Botão TODOS (Verde) -->
-                        <div class="md:col-span-2">
+                        <div class="md:col-span-2 so-filtros">
                             <button type="button" id="btnTodos" 
                                 class="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-sm flex items-center justify-center gap-2 transition-all">
                                 <i class="fa-solid fa-layer-group"></i>
@@ -298,7 +312,16 @@
                             </button>
                         </div>
                     </form>
+
+                    <!-- Chave do Gemini para a pesquisa com IA (mesma chave da aba de extração) -->
+                    <div id="ragChaveLinha" class="hidden flex-col sm:flex-row sm:items-center gap-2 text-[11px] text-slate-500">
+                        <label for="ragApiKey" class="font-bold text-slate-600 flex items-center gap-1.5"><i class="fa-solid fa-key text-brand-600"></i> Chave do Gemini</label>
+                        <input type="password" id="ragApiKey" placeholder="Cole sua GEMINI_API_KEY (fica salva neste navegador)"
+                            class="flex-1 text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-brand-500 focus:outline-none font-mono">
+                    </div>
                 </section>
+
+                {% include "rag_query.html" %}
 
                 <!-- CARD DA TABELA DE LANÇAMENTOS -->
                 <!-- REGRA: A coluna de STATUS NÃO DEVE APARECER NA TABELA -->
@@ -726,6 +749,7 @@
                     <!-- Preenchido via JS -->
                 </div>
             </div>
+
 
         </div>
     </main>
@@ -1374,6 +1398,11 @@
 
         searchForm.addEventListener('submit', (e) => {
             e.preventDefault();
+            const categoria = document.querySelector('input[name="categoriaPesquisa"]:checked').value;
+            if (categoria !== 'filtros') {
+                ragConsultar(document.getElementById('termoInput').value, categoria);
+                return;
+            }
             buscarMovimentos();
         });
 
