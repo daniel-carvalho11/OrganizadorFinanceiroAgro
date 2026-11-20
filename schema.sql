@@ -74,3 +74,13 @@ INSERT INTO classificacao (tipo, descricao, status) VALUES
     ('Receita', 'ARRENDAMENTO RECEBIDO', 'ativo'),
     ('Receita', 'OUTRAS RECEITAS', 'ativo')
 ON CONFLICT (descricao) DO NOTHING;
+
+-- 6. TABELA: rag_embeddings (Índice vetorial do RAG com Embeddings - Agent3)
+-- Um vetor (JSON) por lançamento; hash_texto detecta quando o lançamento mudou.
+CREATE TABLE IF NOT EXISTS rag_embeddings (
+    id_movimento_contas INT PRIMARY KEY REFERENCES movimento_contas(id_movimento_contas) ON DELETE CASCADE,
+    texto TEXT NOT NULL,
+    hash_texto VARCHAR(64) NOT NULL,
+    modelo VARCHAR(80) NOT NULL,
+    vetor TEXT NOT NULL
+);

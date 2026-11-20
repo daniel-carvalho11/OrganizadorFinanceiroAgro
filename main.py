@@ -8,6 +8,7 @@ load_dotenv()
 # Importação dos Agentes Inteligentes conforme arquitetura modular
 from agents.agent1 import Agent1
 from agents.agent2 import Agent2
+from agents.agent3 import Agent3
 from database import init_db, descrever_banco
 import servico_cadastros
 import servico_relatorios
@@ -269,6 +270,33 @@ def relatorio_contas(tipo):
     except Exception as e:
         return jsonify({"status": "error", "message": f"Falha ao gerar relatório: {str(e)}"}), 500
     return jsonify({"status": "success", "dados": dados})
+
+# =====================================================================
+# BUSCA INTELIGENTE (Agent3 - RAG simples e RAG com embeddings)
+# =====================================================================
+
+@app.route("/api/rag/consulta", methods=["POST"])
+def rag_query():
+    """
+    Recebe a pergunta do usuário e executa Agent3.run_query():
+    recupera os lançamentos do banco, injeta no prompt e o Gemini gera a resposta.
+    Corpo JSON: pergunta, modo ('simples' ou 'embeddings') e api_key (opcional se houver no .env).
+    """
+    req_data = request.get_json(silent=True) or {}
+    pergunta = (req_data.get("pergunta") or "").strip()
+    modo = (req_data.get("modo") or "simples").strip().lower()
+    api_key = (req_data.get("api_key") or "").strip() or None
+
+    try:
+        resultado = Agent3(api_key=api_key).run_query(pergunta, modo)
+        return jsonify({"status": "success", **resultado})
+    except ValueError as ve:
+        return jsonify({"status": "error", "message": str(ve)}), 400
+    except Exception as e:
+        app.logger.exception("Falha na consulta RAG")
+        if "API_KEY_INVALID" in str(e) or "API key not valid" in str(e):
+            return jsonify({"status": "error", "message": "Chave do Gemini inválida. Confira a GEMINI_API_KEY informada."}), 400
+        return jsonify({"status": "error", "message": f"Falha na consulta RAG: {str(e)}"}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
