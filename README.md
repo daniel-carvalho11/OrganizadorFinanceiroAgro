@@ -67,7 +67,7 @@ elabora a resposta usando apenas os dados do banco. Fluxo:
 Modos de busca:
 - **RAG Simples**: envia ao modelo os 20 lançamentos ativos mais recentes.
 - **RAG com Embeddings**: cada lançamento é vetorizado com `gemini-embedding-001` e guardado na tabela
-  `rag_embeddings` (índice vetorial). A pergunta também é vetorizada e os 6 lançamentos mais próximos
+  `rag_embeddings` (índice vetorial). A pergunta também é vetorizada e os 10 lançamentos mais próximos
   (similaridade de cosseno) formam o contexto. O índice é atualizado sozinho a cada consulta: só os
   lançamentos novos ou alterados são vetorizados de novo, e os excluídos saem do índice.
 
