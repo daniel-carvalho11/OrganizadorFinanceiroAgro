@@ -107,6 +107,26 @@ def test_indice_vetorial_so_recalcula_o_que_mudou(client, gemini):
     assert [f["id_movimento_contas"] for f in terceira["fontes"]] == [id_b]
 
 
+def test_rota_identifica_falha_nos_embeddings_da_pergunta(client, gemini, monkeypatch):
+    _lancar(client, "1", "Agro Sementes", "Adubo NPK")
+    embed_original = gemini.embed_content
+
+    def embed(model, contents, config):
+        if config.task_type == "RETRIEVAL_QUERY":
+            raise RuntimeError("400 INVALID_ARGUMENT")
+        return embed_original(model, contents, config)
+
+    monkeypatch.setattr(gemini, "embed_content", embed)
+    resposta = client.post("/api/rag/consulta", json={
+        "pergunta": "Qual nota inclui adubo NPK?",
+        "modo": "embeddings",
+        "api_key": "teste",
+    })
+
+    assert resposta.status_code == 500
+    assert resposta.get_json()["message"] == "Falha ao gerar embeddings da pergunta pelo Gemini."
+
+
 def test_sem_lancamentos_nao_chama_o_modelo(gemini):
     resultado = Agent3(api_key="teste").run_query("Quais contas estão vencidas?", "embeddings")
     assert resultado["fontes"] == []

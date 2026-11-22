@@ -7,3 +7,21 @@ venv/
 *.db
 .pytest_cache/
 documento entrega/
+
+# Notas de teste e artefatos gerados localmente
+/output/
+/notas geradas/
+NF-*-teste.pdf
+danfes-ficticios-teste-rag.zip
+
+# Configuração local de ferramentas e arquivos temporários
+/.claude/launch.json
+.env.*
+!.env.example
+*.db-journal
+*.db-shm
+*.db-wal
+.coverage
+htmlcov/
+.ruff_cache/
+.mypy_cache/

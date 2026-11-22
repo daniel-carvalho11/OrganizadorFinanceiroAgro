@@ -9,6 +9,7 @@ load_dotenv()
 from agents.agent1 import Agent1
 from agents.agent2 import Agent2
 from agents.agent3 import Agent3
+from agents.agent3.agent_RAG import ErroConsultaRAG
 from database import init_db, descrever_banco
 import servico_cadastros
 import servico_relatorios
@@ -293,10 +294,12 @@ def rag_query():
     except ValueError as ve:
         return jsonify({"status": "error", "message": str(ve)}), 400
     except Exception as e:
-        app.logger.exception("Falha na consulta RAG")
-        if "API_KEY_INVALID" in str(e) or "API key not valid" in str(e):
+        app.logger.exception("Falha na consulta RAG (modo=%s)", modo)
+        erro_original = str(e.__cause__ or e)
+        if "API_KEY_INVALID" in erro_original or "API key not valid" in erro_original:
             return jsonify({"status": "error", "message": "Chave do Gemini inválida. Confira a GEMINI_API_KEY informada."}), 400
-        return jsonify({"status": "error", "message": f"Falha na consulta RAG: {str(e)}"}), 500
+        mensagem = str(e) if isinstance(e, ErroConsultaRAG) else "Falha interna na consulta RAG."
+        return jsonify({"status": "error", "message": mensagem}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))

@@ -26,6 +26,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from database import SessionLocal
@@ -40,6 +41,10 @@ DIMENSAO_EMBEDDING = 768
 LIMITE_REGISTROS = 20   # RAG simples: limita o contexto para manter o desempenho
 TOP_K = 10              # RAG com embeddings: quantidade de lançamentos mais próximos
 LOTE_EMBEDDING = 50     # textos enviados por chamada à API de embeddings
+
+
+class ErroConsultaRAG(RuntimeError):
+    """Falha operacional associada a uma etapa da consulta."""
 
 SYSTEM_INSTRUCTION = """Você é um assistente de gestão financeira de uma propriedade rural.
 Responda em português do Brasil, usando SOMENTE os dados fornecidos no contexto.
@@ -110,6 +115,7 @@ class Agent3:
             raise ValueError("Chave GEMINI_API_KEY não configurada no ambiente ou na tela.")
 
         session = self._get_session()
+        etapa = "consulta de lançamentos no banco"
         try:
             info_indice = None
             # 1. Retrieval
@@ -123,10 +129,16 @@ class Agent3:
                                        None, [], info_indice)
 
             # 2. Augmentation
+            etapa = "montagem do contexto"
             contexto = self._montar_contexto(registros, modo, session)
             # 3. Generation
+            etapa = "geração da resposta pelo Gemini"
             resposta, modelo = self._generate_response(query, contexto)
             return self._resultado(query, modo, resposta, modelo, registros, info_indice)
+        except ErroConsultaRAG:
+            raise
+        except Exception as erro:
+            raise ErroConsultaRAG(f"Falha na etapa de {etapa}.") from erro
         finally:
             if not self.db_session:
                 session.close()
@@ -180,7 +192,12 @@ class Agent3:
 
     def _retrieve_data_embeddings(self, query: str, session: Session) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
         """RAG com embeddings: compara o vetor da pergunta com o índice vetorial dos lançamentos."""
-        indice, info = self._sincronizar_indice(session)
+        try:
+            indice, info = self._sincronizar_indice(session)
+        except ErroConsultaRAG:
+            raise
+        except Exception as erro:
+            raise ErroConsultaRAG("Falha ao sincronizar o índice de embeddings no banco.") from erro
         if not indice:
             return [], info
 
@@ -238,7 +255,7 @@ class Agent3:
         if pendentes or removidos:
             try:
                 session.commit()
-            except Exception:
+            except IntegrityError:
                 # Outra requisição pode ter gravado o mesmo índice ao mesmo tempo; os vetores
                 # calculados continuam válidos para esta consulta e serão regravados na próxima.
                 session.rollback()
@@ -250,13 +267,20 @@ class Agent3:
     def _embed(self, textos: List[str], task_type: str) -> List[List[float]]:
         """Converte textos em vetores (embeddings) com o modelo de embeddings do Gemini."""
         vetores: List[List[float]] = []
-        for inicio in range(0, len(textos), LOTE_EMBEDDING):
-            resposta = self.client.models.embed_content(
-                model=MODELO_EMBEDDING,
-                contents=textos[inicio:inicio + LOTE_EMBEDDING],
-                config=types.EmbedContentConfig(task_type=task_type, output_dimensionality=DIMENSAO_EMBEDDING),
-            )
-            vetores.extend(list(e.values) for e in resposta.embeddings)
+        origem = "da pergunta" if task_type == "RETRIEVAL_QUERY" else "dos lançamentos"
+        try:
+            for inicio in range(0, len(textos), LOTE_EMBEDDING):
+                lote = textos[inicio:inicio + LOTE_EMBEDDING]
+                resposta = self.client.models.embed_content(
+                    model=MODELO_EMBEDDING,
+                    contents=lote,
+                    config=types.EmbedContentConfig(task_type=task_type, output_dimensionality=DIMENSAO_EMBEDDING),
+                )
+                if len(resposta.embeddings or []) != len(lote):
+                    raise RuntimeError("O Gemini devolveu uma quantidade inesperada de vetores.")
+                vetores.extend(list(e.values) for e in resposta.embeddings)
+        except Exception as erro:
+            raise ErroConsultaRAG(f"Falha ao gerar embeddings {origem} pelo Gemini.") from erro
         return vetores
 
     # ------------------------------------------------------------------
