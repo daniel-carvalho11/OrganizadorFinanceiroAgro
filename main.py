@@ -191,7 +191,9 @@ def resumo_financeiro():
 @app.route("/api/parcelas/<int:id_parcela>/pagar", methods=["POST", "PATCH"])
 def registrar_pagamento_parcela(id_parcela):
     """Endpoint para registrar o pagamento/quitação de uma parcela no banco relacional."""
-    dados_req = request.get_json() or {}
+    dados_req = request.get_json()
+    if not isinstance(dados_req, dict) or ("valor_pago" in dados_req and dados_req["valor_pago"] is None):
+        return jsonify({"status": "error", "message": "Informe um valor positivo ou omita o campo para quitar."}), 400
     valor_pago = dados_req.get("valor_pago")
     resultado = agent2.registrar_pagamento_parcela(id_parcela, valor_pago=valor_pago)
     code = 200 if resultado.get("status") == "success" else 400

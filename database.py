@@ -1,7 +1,8 @@
 import os
 from pathlib import Path
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, func
+from sqlalchemy import create_engine, func, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker, scoped_session
 from models import Base, Classificacao
 
@@ -35,9 +36,40 @@ def descrever_banco() -> str:
 
 SessionLocal = scoped_session(sessionmaker(autocommit=False, autoflush=False, bind=engine))
 
+INDICES_NF_ATIVA = (
+    "uq_movimento_despesa_nf_ativa",
+    "uq_movimento_receita_nf_ativa",
+)
+
+
+def criar_indices_nf_postgresql():
+    """Aplica a migração de unicidade no PostgreSQL configurado para esta instância."""
+    if engine.dialect.name != "postgresql":
+        return
+
+    numero = "ltrim(regexp_replace(numero_nota_fiscal, '[^0-9]', '', 'g'), '0')"
+    try:
+        with engine.begin() as conexao:
+            # Serializa a criação dos índices quando vários workers iniciam juntos.
+            conexao.execute(text("SELECT pg_advisory_xact_lock(13572468)"))
+            for nome, tipo, colunas in (
+                (INDICES_NF_ATIVA[0], "Despesa", f"id_pessoa_emitente, ({numero})"),
+                (INDICES_NF_ATIVA[1], "Receita", f"({numero})"),
+            ):
+                conexao.execute(text(
+                    f"CREATE UNIQUE INDEX IF NOT EXISTS {nome} ON movimento_contas ({colunas}) "
+                    f"WHERE status = 'ativo' AND tipo = '{tipo}' AND {numero} <> ''"
+                ))
+    except IntegrityError as erro:
+        raise RuntimeError(
+            "Há notas fiscais ativas duplicadas. Confira os lançamentos antes de aplicar os índices."
+        ) from erro
+
+
 def init_db():
     """Cria todas as tabelas no banco de dados e popula as categorias iniciais de despesa e receita."""
     Base.metadata.create_all(bind=engine)
+    criar_indices_nf_postgresql()
     
     session = SessionLocal()
     try:

@@ -1,7 +1,9 @@
 from typing import Dict, Any, List, Optional
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased
-from database import SessionLocal
+from database import INDICES_NF_ATIVA, SessionLocal
 from models import Pessoa, MovimentoContas, Parcela, Classificacao, MovimentoHasClassificacao
 from servico_persistencia import (
     salvar_nota_fiscal, parse_data, calcular_vencimento_parcela, identificacao_parcela,
@@ -10,6 +12,14 @@ from servico_persistencia import (
 )
 
 CATEGORIA_PADRAO = "INSUMOS AGRÍCOLAS"
+
+
+def _mensagem_erro_gravacao(erro: Exception, operacao: str) -> str:
+    if isinstance(erro, IntegrityError):
+        diagnostico = getattr(erro.orig, "diag", None)
+        if getattr(diagnostico, "constraint_name", None) in INDICES_NF_ATIVA:
+            return "Já existe um lançamento ativo com esse número de nota fiscal."
+    return f"Erro ao {operacao}: {erro}"
 
 
 class Agent2:
@@ -289,7 +299,7 @@ class Agent2:
             session.rollback()
             return {
                 "status": "error",
-                "message": f"Erro ao persistir nota fiscal: {str(e)}"
+                "message": _mensagem_erro_gravacao(e, "persistir nota fiscal")
             }
         finally:
             if should_close:
@@ -405,7 +415,7 @@ class Agent2:
             }
         except Exception as e:
             session.rollback()
-            return {"status": "error", "message": f"Erro ao criar movimento: {str(e)}"}
+            return {"status": "error", "message": _mensagem_erro_gravacao(e, "criar movimento")}
         finally:
             if should_close:
                 session.close()
@@ -485,7 +495,7 @@ class Agent2:
             }
         except Exception as e:
             session.rollback()
-            return {"status": "error", "message": f"Erro ao editar lançamento: {str(e)}"}
+            return {"status": "error", "message": _mensagem_erro_gravacao(e, "editar lançamento")}
         finally:
             if should_close:
                 session.close()
@@ -523,7 +533,7 @@ class Agent2:
             }
         except Exception as e:
             session.rollback()
-            return {"status": "error", "message": f"Erro ao alterar status: {str(e)}"}
+            return {"status": "error", "message": _mensagem_erro_gravacao(e, "alterar status")}
         finally:
             if should_close:
                 session.close()
@@ -636,27 +646,42 @@ class Agent2:
             if not parcela:
                 return {"status": "error", "message": "Parcela não encontrada no banco."}
 
-            val_total = float(parcela.valor_parcela or 0.0)
-            val_ja_pago = float(parcela.valor_pago or 0.0)
-            val_saldo_atual = float(parcela.valor_saldo if parcela.valor_saldo is not None else (val_total - val_ja_pago))
+            val_total = parcela.valor_parcela
+            val_ja_pago = parcela.valor_pago
+            saldo_atual = parcela.valor_saldo
+            centavo = Decimal("0.01")
+            try:
+                solicitado = saldo_atual if valor_pago is None else Decimal(str(valor_pago))
+                if not solicitado.is_finite() or solicitado <= 0 or solicitado != solicitado.quantize(centavo):
+                    raise InvalidOperation
+            except InvalidOperation:
+                return {"status": "error", "message": "Informe um valor positivo com até duas casas decimais."}
 
-            val_a_pagar = float(valor_pago) if (valor_pago is not None and float(valor_pago) > 0) else val_saldo_atual
-            if val_a_pagar <= 0:
-                return {"status": "error", "message": "O valor do pagamento deve ser maior que zero."}
+            aplicado = min(solicitado, saldo_atual, val_total - val_ja_pago)
+            if aplicado <= 0:
+                return {"status": "error", "message": "A parcela não tem saldo para pagamento."}
 
-            novo_total_pago = min(val_total, val_ja_pago + val_a_pagar)
-            novo_saldo = max(0.0, val_total - novo_total_pago)
-
-            parcela.valor_pago = novo_total_pago
-            parcela.valor_saldo = novo_saldo
-            if novo_saldo == 0:
-                parcela.status = "quitada"
+            novo_saldo = val_total - val_ja_pago - aplicado
+            atualizadas = session.query(Parcela).filter(
+                Parcela.id_parcela == id_parcela,
+                Parcela.valor_parcela == val_total,
+                Parcela.valor_pago == val_ja_pago,
+                Parcela.valor_saldo == saldo_atual,
+                Parcela.status == parcela.status,
+            ).update({
+                Parcela.valor_pago: val_ja_pago + aplicado,
+                Parcela.valor_saldo: novo_saldo,
+                Parcela.status: "quitada" if novo_saldo == 0 else parcela.status,
+            }, synchronize_session=False)
+            if not atualizadas:
+                session.rollback()
+                return {"status": "error", "message": "A parcela foi alterada. Atualize os dados e tente novamente."}
 
             session.commit()
             session.refresh(parcela)
             return {
                 "status": "success",
-                "message": f"Pagamento de R$ {val_a_pagar:.2f} registrado com sucesso para a parcela {parcela.identificacao}!",
+                "message": f"Pagamento de R$ {aplicado:.2f} registrado com sucesso para a parcela {parcela.identificacao}!",
                 "parcela": parcela.to_dict()
             }
         except Exception as e:

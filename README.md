@@ -15,6 +15,11 @@ Contas a Pagar / a Receber, relatórios e Busca Inteligente com RAG (Agent3).
 
 O deploy leva apenas código: o banco local de cada desenvolvedor nunca é afetado.
 
+Ao iniciar, a aplicação cria no PostgreSQL configurado os índices que impedem notas ativas
+duplicadas. A regra é por fornecedor nas despesas e por número nas receitas. Se o log
+informar que já existem duplicidades, revise os lançamentos desse banco e reinicie a
+aplicação após resolver os conflitos. A criação dos índices preserva os registros existentes.
+
 ## Configuração local
 
 ### 1. Dependências

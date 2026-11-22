@@ -1,6 +1,11 @@
 """Regras de duplicidade por tipo de operação e relatórios de Contas a Pagar / a Receber."""
 from datetime import date
 
+import pytest
+from sqlalchemy.exc import IntegrityError
+
+from database import SessionLocal, engine
+from models import MovimentoContas
 import servico_relatorios
 
 
@@ -39,6 +44,36 @@ def test_receita_inativa_libera_numero_e_reativacao_respeita_regra(client):
 
     reativar = client.patch(f"/api/movimentos/{primeira['id_movimento_contas']}/status", json={"status": "ativo"})
     assert reativar.status_code == 400
+
+
+@pytest.mark.skipif(engine.dialect.name != "postgresql", reason="Índices exclusivos do PostgreSQL")
+@pytest.mark.parametrize("tipo", ["Despesa", "Receita"])
+def test_postgresql_impede_duplicidade_fora_do_agent2(client, tipo):
+    primeira = _lancar(client, tipo, "98765", "Emitente")
+    segunda = _lancar(client, tipo, "98766", "Outro emitente" if tipo == "Receita" else "Emitente")
+    assert primeira.status_code == segunda.status_code == 201
+
+    with SessionLocal() as session:
+        movimento = session.get(MovimentoContas, segunda.get_json()["dados"]["id_movimento_contas"])
+        movimento.numero_nota_fiscal = "000.098.765"
+        with pytest.raises(IntegrityError):
+            session.commit()
+        session.rollback()
+
+
+def test_pagamento_explicito_invalido_preserva_saldo(client):
+    movimento = _lancar(client, "Despesa", "42", "Fornecedor").get_json()["dados"]
+    parcela = movimento["parcelas"][0]
+    rota = f"/api/parcelas/{parcela['id_parcela']}/pagar"
+    for invalido in (0, -1, "NaN", "Infinity", "0.001", None):
+        assert client.post(rota, json={"valor_pago": invalido}).status_code == 400
+
+    parcial = client.post(rota, json={"valor_pago": "12.34"}).get_json()["parcela"]
+    assert parcial["valor_pago"] == 12.34
+    assert parcial["valor_saldo"] == 87.66
+    quitacao = client.post(rota, json={}).get_json()["parcela"]
+    assert quitacao["status"] == "quitada"
+    assert quitacao["valor_pago"] == 100
 
 
 def test_documento_com_tamanho_invalido_e_recusado(client):
